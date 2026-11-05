@@ -50,6 +50,7 @@ One entry per decision. A version or doc link goes in only after it was read fro
 
 - **Sandbox quirks:** Node's built-in `fetch` ignores the proxy, so export `NODE_USE_ENV_PROXY=1`; put `~/.local/share/solana/install/active_release/bin` on `PATH`. `anchor build` warns that the keypair and `declare_id!` differ; program keypairs are never committed, so the real id is set in Phase 10.
 - **Build-target caveat [V-rev, read from ELF headers]:** `cargo-build-sbf` 4.4.0 with platform-tools v1.57 emits SBPFv3 programs (`e_flags=3`) while the dumped Meteora binary is v0, and `LiteSVM::new()` enables every feature (p-token, SIMD-0312). Before relying on the spike numbers: confirm devnet accepts SBPFv3 programs (or build with `--arch`), and run the atomic launch once on `solana-test-validator` with devnet clones (Phase 1 prerequisite in PROGRESS.md).
+- **Program dependencies added in Phase 1:** `solana-sha256-hasher` 3 (with its `sha2` feature for host tests) and `solana-instructions-sysvar` 3. Anchor 1.2.2's `solana_program` shim no longer re-exports hashing or the instructions sysvar; both are official Solana SDK crates already in the dependency graph, at the versions of anchor-lang's default `solana-v3` set.
 - **Dev dependencies added beyond SPEC §4** (approved with the Phase 0 go-ahead): vitest, vite, eslint stack, prettier, `@types/node`; in the throwaway AMM spike only: `bytemuck`, `serde_json`, `base64`, `solana-account`.
 
 ### D-002 · AMM: Meteora DAMM v2 vs Raydium CPMM

@@ -1,0 +1,10 @@
+# Prequel ticker canon table, version 1 (FROZEN).
+# The single source of truth for the confusables mapping (SPEC §2). It is read by
+#   - programs/prequel/build.rs   (generates the Rust constant used on-chain), and
+#   - packages/shared/scripts/gen-canon.ts (generates the TypeScript constant).
+# One mapping per line: <from> <to>. Both sides are one ASCII character; targets must not be sources.
+# Changing a mapping moves candidate addresses: never edit version 1, add a new table and bump the version.
+version 1
+0 O
+1 I
+5 S
