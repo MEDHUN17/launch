@@ -18,6 +18,8 @@ What it runs, inside LiteSVM against the real devnet DAMM v2 binary and public c
 
 **Warning:** `owner_cpi` in the spike program is an unsafe generic forwarder that signs as the position owner. It exists only to test what the owner PDA could do. Never copy it.
 
+`test-output.log` is the committed output of the last full run (`run.sh`). The pre-funding, post-lock and overfunding probes in `probe2.rs` only print their outcomes; the log is their record until they are converted to asserts.
+
 Provenance of `idls/cp_amm.json`: `npm pack @meteora-ag/cp-amm-sdk@1.5.1`, then
 `python3 -I extract-idl.py pkg/package/dist/index.js idls/cp_amm.json`
 (sha256 `52ad32666ee3665c417e8e617fcf7de7ac8d2435dfa6316c57bfc7343185e0ef`). Fixtures come from devnet only, never mainnet.

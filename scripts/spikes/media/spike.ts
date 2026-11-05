@@ -8,7 +8,7 @@
 // No Pinata key was available when this was written, so the upload path is UNTESTED; it follows
 // https://docs.pinata.cloud/files/uploading-files.md (POST https://uploads.pinata.cloud/v3/files, multipart,
 // network=public, Bearer JWT; the response carries a CIDv1 such as bafybei...), read 2026-11-05.
-// The on-chain field limits below (name 32, symbol 10, uri 200) are from memory of the Metaplex Token Metadata
+// The on-chain field limits below (name 32, symbol 10, uri 200, all in BYTES) are from memory of the Metaplex Token Metadata
 // docs, which render client-side and could not be read here: verify them in Phase 3 before relying on them.
 
 import { deflateSync, crc32 } from "node:zlib";
@@ -42,8 +42,8 @@ function tinyPng(): Uint8Array {
 
 export function buildMetadata(args: { name: string; symbol: string; description: string; imageUri: string; eventTitle: string }) {
   const { name, symbol, description, imageUri, eventTitle } = args;
-  if (name.length > LIMITS.name) throw new Error(`name > ${LIMITS.name}`);
-  if (symbol.length > LIMITS.symbol) throw new Error(`symbol > ${LIMITS.symbol}`);
+  if (Buffer.byteLength(name) > LIMITS.name) throw new Error(`name > ${LIMITS.name} bytes`);
+  if (Buffer.byteLength(symbol) > LIMITS.symbol) throw new Error(`symbol > ${LIMITS.symbol} bytes`);
   return {
     name,
     symbol,
@@ -95,7 +95,8 @@ async function main() {
   }
   // A real CIDv1 string is 59 characters (bafybei...), so the on-chain URI is ~66 characters.
   const worstCase = "ipfs://" + "b".repeat(59);
-  console.log(`uri length: ${metadataUri.length} (worst case ${worstCase.length}, limit ${LIMITS.uri}) ok=${worstCase.length <= LIMITS.uri}`);
+  const uriBytes = Buffer.byteLength(metadataUri);
+  console.log(`uri bytes: ${uriBytes} (worst case ${worstCase.length}, limit ${LIMITS.uri}) ok=${worstCase.length <= LIMITS.uri && uriBytes <= LIMITS.uri}`);
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").slice(-3).join("/"))) {

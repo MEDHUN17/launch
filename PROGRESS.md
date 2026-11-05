@@ -10,25 +10,27 @@ Tick a box only when its criterion passes (tests green, or the artifact exists a
 - [x] **Network** — resolved 2026-11-05 (Network access set to Full). Remaining limits: kalshi.com and solana.com show a browser-verification checkpoint to scripted clients; GitHub outside this repo is scoped (403).
 - [ ] **Kalshi API and data terms need a human reader** (D-003). The sandbox cannot read them. Until they are reviewed, no Kalshi payloads are committed.
 - [ ] **Pinata API key** for an upload test (optional, D-005).
-- [ ] **First remote CI run** — the workflow is written and every step passes locally; confirm on GitHub (action versions are unverified, D-001).
+- [x] **First green remote CI run** — run 41987267156 passed both jobs (the first run failed on a Rust-version mismatch, since fixed). Action versions are still unverified and GitHub warns about Node 20 actions (D-001).
 
 ## Needs your decision before Phase 1 code
 
 These come from my own review and from two independent Opus reviews (details in `docs/DECISIONS.md` section B). Phase 1 fixes account layouts, so they are cheap now and expensive later.
 
-1. **Q-02 Atomic launch (critical).** Verified on localnet: someone holding none of the coin can create the (coin, wSOL) pool on Meteora's 1% config first, which would strand about 99% of a raise. Proposal: mint, wrap, create pool, lock, revoke authority and mark Born in one instruction, plus a birth deadline that turns an unlaunched winner into a refund. This amends §5. Measured: that whole launch fits one legacy transaction (153k CU, 22 accounts, 820 bytes), before Metaplex metadata, which adds about 3 accounts and needs a short URI or a v0 transaction.
+1. **Q-02 Atomic launch (critical).** Verified on localnet: someone holding none of the coin can create the (coin, wSOL) pool on Meteora's 1% config first, which would strand about 99% of a raise. Proposal: mint, wrap, create pool, lock, revoke authority and mark Born in one instruction, plus a birth deadline that turns an unlaunched winner into a refund. This amends §5. Measured (a lower bound, pool part only): 153k CU, 22 accounts, 820 bytes in a legacy transaction. The real launch adds the program's own accounts and Metaplex metadata, so plan for a v0 transaction with a lookup table.
 2. **Q-11 Snapshot and bound parameters per event** so the admin cannot change fees, delays or bonds on a live event.
 3. **Q-14 Co-proposer economics** (`co_propose` currently beats `commit` for free).
 4. **Q-13, Q-16, Q-19 Slate and Canon policy** (slot grabbing, attestation scope, confusables table versioning).
 5. **D-010 / Q-05 Vault model and rewritten invariants.**
 6. Also answer: D-002 (Meteora, provisional), Q-15 (delay trading after launch; exit math), Q-07 (who pays birth rent).
 
+Interpretations, not spec changes (say if you disagree): the Phase 1 invariant 4 and 5 items are narrowed to what can be tested before `claim` and birth exist; the Phase 4 item says "or the atomic launch" pending Q-02; the Phase 9 item lists the Build text in brackets.
+
 ## Phase 0 — Setup and spikes
 
 Build: Monorepo, pinned toolchain, CLAUDE.md, CI skeleton. Spikes: AMM choice (create a pool, lock the LP and claim fees by CPI on localnet); Kalshi API (list markets, read a settled one); DFlow on-chain settlement (research only); media storage.
 Done when: Spike scripts run; four decisions logged.
 
-- [x] Spike scripts run: `pnpm spike:amm` (3 LiteSVM tests against the real devnet binary), `pnpm spike:kalshi` (live read-only API), `pnpm spike:media` (dry run only: the upload path is untested, no Pinata key). DFlow is research only.
+- [x] Spike scripts run: `pnpm spike:amm` (9 tests: 8 LiteSVM against the real devnet binary, 1 IDL check), `pnpm spike:kalshi` (live read-only API), `pnpm spike:media` (dry run only: the upload path is untested, no Pinata key). DFlow is research only.
 - [x] Four decisions logged in `docs/DECISIONS.md`: D-002 AMM (provisional), D-003 Kalshi, D-004 DFlow (inconclusive), D-005 media storage (provisional).
 
 Task breakdown:
@@ -36,14 +38,18 @@ Task breakdown:
 - [x] CLAUDE.md, PROGRESS.md, docs/DECISIONS.md created (kickoff)
 - [x] 0.1 Toolchain bootstrap: `scripts/bootstrap.sh` (Agave 4.3.2, Anchor CLI 1.2.2, solana-verify 0.5.2), pins in D-001
 - [x] 0.2 Monorepo skeleton per SPEC §4 and a compile-only Anchor stub (`ping`), tested through LiteSVM
-- [x] 0.3 CI workflow (`.github/workflows/ci.yml`): JS job and program job. Passes locally; not yet observed on GitHub
+- [x] 0.3 CI workflow (`.github/workflows/ci.yml`): JS job and program job. Green on GitHub in run 41987267156 after one fix; hardening is listed under "Carried forward"
 - [x] 0.4 Spike A, AMM: Meteora DAMM v2 on localnet — pool created, locked and fees claimed by CPI from PDAs; squatting shown; Raydium compared from docs and devnet reads only
 - [x] 0.5 Spike B, Kalshi: live listing, settled-market read, evidence hash, resolver mapping
 - [x] 0.6 Research C, DFlow: inconclusive, with a v1 sketch and the questions for DFlow
 - [x] 0.7 Spike D, media: Pinata chosen provisionally; upload untested
 - [x] 0.8 Close-out: decisions and spec questions logged, docs updated
 
-Carried forward: pin the first remote CI run; replace the throwaway AMM spike with the Phase 4 `seed_pool`/atomic launch; verify the Metaplex field limits and fee in Phase 3; read Kalshi's terms before committing any Kalshi data.
+Carried forward into Phase 1:
+- Run the atomic launch once on `solana-test-validator` with devnet clones, and confirm devnet accepts SBPFv3 programs (or build with `--arch`); the spike used LiteSVM with every feature enabled (D-001).
+- Convert the observational probes in `probe2.rs` (pre-funding, post-lock, overfunding) to asserts.
+- CI hardening: save the toolchain cache right after bootstrap (`cache/restore` + `cache/save`), cache `target` keyed on `Cargo.lock`, `timeout-minutes`, cancel in-progress runs only off `main`, and avoid running both `push` and `pull_request`.
+- Replace the throwaway AMM spike with the real launch; verify the Metaplex field limits and fee in Phase 3; read Kalshi's terms before committing any Kalshi data.
 
 ## Phase 1 — Program core
 
@@ -145,4 +151,4 @@ SPEC §11 doesn't assign these to a phase's "Done when". See `docs/DECISIONS.md`
 ## Session log
 
 - 2026-11-05 — Kickoff. Read SPEC.md; saved it unchanged; created CLAUDE.md, PROGRESS.md and docs/DECISIONS.md; drafted the Phase 0 plan.
-- 2026-11-05 — Phase 0. You opened the network. Installed and pinned the toolchain; built the monorepo skeleton, Anchor stub and CI; ran the Kalshi, AMM and media spikes; two independent Opus reviews (spec and AMM) folded into DECISIONS.md. Key results: the Meteora create+lock+claim flow works by CPI from PDAs, pool squatting works without holding the coin, and the fully atomic launch (mint, supply, revoke, wrap, pool, lock) fits one transaction at 153k CU. After the lock the owner can still `split_position` the liquidity away, so the program must never sign a split.
+- 2026-11-05 — Phase 0. (CI is green on GitHub; a third Opus review fact-checked this write-up and its corrections are applied.) You opened the network. Installed and pinned the toolchain; built the monorepo skeleton, Anchor stub and CI; ran the Kalshi, AMM and media spikes; two independent Opus reviews (spec and AMM) folded into DECISIONS.md. Key results: the Meteora create+lock+claim flow works by CPI from PDAs, pool squatting works without holding the coin, and the pool part of an atomic launch (mint, supply, revoke, wrap, pool, lock) takes 153k CU and 22 accounts; the full launch will likely need a v0 transaction. After the lock the owner can still `split_position` the liquidity away, so the program must never sign a split.

@@ -51,7 +51,8 @@ async function get(path: string, query: Record<string, string | number> = {}): P
 /**
  * Map a Kalshi market to what the Prequel resolver should do.
  * Only `finalized` (terminal, positions paid out) is safe: `determined` can still be disputed/amended.
- * A final market whose result is not yes/no (scalar, or empty as for a void) is never auto-resolved.
+ * A final market whose result is not yes/no is never auto-resolved: a cancelled or voided event is `scalar` with a fractional
+ * settlement value (about 1% of settled markets); an empty result means not yet determined.
  */
 export type Action =
   | { kind: "wait"; reason: string }

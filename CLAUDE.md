@@ -66,7 +66,7 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 
 | Purpose | Command | Status |
 | --- | --- | --- |
-| Install pinned Agave, Anchor CLI, solana-verify (idempotent) | `scripts/bootstrap.sh` (`BOOTSTRAP_SKIP_VERIFY=1` skips solana-verify) | verified |
+| Install pinned Agave, Anchor CLI, solana-verify (idempotent) | `scripts/bootstrap.sh` (`BOOTSTRAP_SKIP_VERIFY=1` skips solana-verify) | already-installed path verified here; clean install runs in CI |
 | Install JS deps | `pnpm install` | verified |
 | JS lint, typecheck, test, web build (28 tasks) | `pnpm turbo run lint typecheck test build` | verified |
 | Lint the scripts folder | `pnpm lint:scripts` | verified |
@@ -84,24 +84,25 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 
 - Checked math with u128 intermediates; round user payouts down. AMM price and liquidity math needs 256-bit arithmetic.
 - Constraints on every account: seeds, bump, `has_one`, owner, mint, token program. No unchecked remaining accounts. Reject duplicate mutable accounts.
-- Pin CPI program ids (AMM, Metaplex, token program) as constants and check them. **A permissionless launch must build every AMM argument itself** (config, fee mode, price range, activation) and never take them from the caller (Q-12).
-- **The coin's mint must not exist before the pool is created in the same transaction**, or a third party can create the pool first without holding the coin (verified, Q-02).
+- Pin CPI program ids (AMM, Metaplex, token program) as constants and check them. *Proposed, Q-12:* a permissionless launch builds every AMM argument itself (config, fee mode, price range, activation) and never takes them from the caller.
+- Verified in the AMM spike: a third party can create the (coin, wSOL) pool first without holding the coin, so a mint that exists before the pool is created can be squatted. *Proposed, not yet approved (Q-02):* an atomic launch. SPEC §5 still has separate `birth_candidate` and `seed_pool`, and SPEC wins until you approve the change.
 - Keep money totals in state (`total_committed` and similar). Never infer them from vault lamports: anyone can send lamports to a PDA.
 - Payers for AMM rent must be data-less, system-owned PDAs (D-010).
 - Every program-created PDA (mint, token accounts, vault) needs a creation path that tolerates pre-funding (`CreateAccountAllowPrefund` or top-up + allocate + assign); plain `create_account` fails if an attacker sends lamports first (verified).
-- The position-owner PDA must never sign anything generic: after the lock `split_position` can still move the locked liquidity into another position (verified), and so could an NFT transfer. Sign only the exact fee-claim CPI.
+- Verified: after the lock, `split_position` signed by the position owner can still move the locked liquidity into another position (an NFT transfer would too). *Proposed, Q-12:* the owner PDA signs only the exact lock and fee-claim CPIs, never a generic forward.
 - Close accounts safely and block revival.
-- Time checks use the Clock sysvar through one effective-status function. Test the exact boundary seconds (T-1, T, T+1).
+- Never export `RUSTUP_TOOLCHAIN` when running `anchor build`: `anchor-lang-idl` 0.1.4 passes it to `cargo +<toolchain>` literally and breaks the IDL step **[read from source by a reviewer, not run]**. Scope it to a single command, as `scripts/bootstrap.sh` does.
+- Time checks use the Clock sysvar (*proposed, Q-04:* through one effective-status function). Test the exact boundary seconds (T-1, T, T+1).
 - Pause never blocks `claim`, `refund` or `claim_creator_fees`.
-- Ed25519 attestation by instruction introspection: check the precompile program id, that signature, pubkey and message all come from the same instruction (all three index fields = u16::MAX), exactly one signature, the exact message bytes, and the expiry.
+- Ed25519 attestation by instruction introspection: check the precompile program id, that signature, pubkey and message all come from the same instruction, the exact message bytes, and the expiry (*proposed additions, Q-16:* all three index fields = u16::MAX and exactly one signature).
 - Permissionless instructions are idempotent. Privileged instructions name their role (admin, resolver, canonicalizer).
 - Admin, upgrade authority and treasury are a Squads multisig on devnet (Phase 10).
-- Every invariant in SPEC §5 gets a test (with the rewording proposed in Q-05).
+- Every invariant in SPEC §5 gets a test (rewording proposed in Q-05, not yet approved).
 
 ## Environment notes (cloud sandbox)
 
 - The container is ephemeral. Commit and push before a session ends. A fresh container needs `scripts/bootstrap.sh` (about 5 minutes the first time; `anchor-cli` compiles from source).
-- Network access is Full for this environment as of 2026-11-05. Still blocked for scripted clients: kalshi.com and solana.com (browser-verification checkpoint), and GitHub outside this repo (403). Docs sites that publish `llms.txt` can be read as Markdown (Kalshi, Meteora, Raydium, Pinata, Metaplex under `www.metaplex.com/docs`). Don't mock results for anything you cannot reach, and don't route around the policy.
+- Network access is Full for this environment as of 2026-11-05. Still blocked for scripted clients: kalshi.com and solana.com (browser-verification checkpoint), and GitHub pages, APIs and git for other repos (403); release asset downloads still work (the Agave asset and platform-tools downloaded fine). Docs sites that publish `llms.txt` can be read as Markdown (Kalshi, Meteora, Raydium, Pinata, Metaplex under `www.metaplex.com/docs`). Don't mock results for anything you cannot reach, and don't route around the policy.
 - Node's built-in `fetch` ignores the proxy: export `NODE_USE_ENV_PROXY=1` for scripts that call the network. Node 22.23 runs `.ts` files directly (type stripping); keep spike scripts erasable-syntax only.
 - Devnet reads (program and account dumps) are allowed and are how AMM fixtures are made; never read or write mainnet.
 - Docker has no daemon here, so `solana-verify` and docker-compose cannot run; `psql` 16 and `redis-server` 7 are installed and can be started directly.

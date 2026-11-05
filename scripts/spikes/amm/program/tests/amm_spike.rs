@@ -429,7 +429,7 @@ fn try_send_with(
         Err(e) => Err(format!(
             "{:?} | last logs: {:?}",
             e.err,
-            e.meta.logs.iter().rev().take(4).collect::<Vec<_>>()
+            e.meta.logs.iter().rev().take(10).collect::<Vec<_>>()
         )),
     }
 }
@@ -536,22 +536,75 @@ fn squatting_probe_one_sided_pool_without_holding_the_coin() {
         "SQUAT attacker pool creation (zero token A, wSOL only, price at top of range): {:?}",
         first.as_ref().map(|cu| format!("ACCEPTED, CU={cu}"))
     );
-    if let Err(e) = &first {
-        println!("SQUAT rejected: {e}");
-        return;
-    }
-    assert!(svm.get_account(&pool).is_some(), "squatted pool exists");
-    // Prequel's own creation for the same (config, mints) must now fail: the address is taken.
-    let nft2 = Keypair::new();
-    let p2 = pda(&[b"position", nft2.pubkey().as_ref()], &damm());
-    let n2 = pda(&[b"position_nft_account", nft2.pubkey().as_ref()], &damm());
-    let second = try_send_with(
-        &mut svm,
-        &[init(nft2.pubkey(), p2, n2)],
-        &[&attacker, &nft2],
+    first.expect(
+        "the attacker's one-sided pool creation must be accepted; if the AMM now rejects it, re-evaluate D-002 and Q-02",
     );
-    println!("SQUAT second creation for the same address: {:?}", second);
-    assert!(second.is_err(), "the pool address is taken");
+    assert!(svm.get_account(&pool).is_some(), "squatted pool exists");
+
+    // Prequel's own `seed` for the same (config, mints) must now fail: the pool address is taken.
+    let program_id = amm_spike::id();
+    svm.add_program(
+        program_id,
+        include_bytes!(concat!(
+            env!("CARGO_TARGET_TMPDIR"),
+            "/../deploy/amm_spike.so"
+        )),
+    )
+    .unwrap();
+    let seeder = pda(&[amm_spike::SEEDER], &program_id);
+    let owner = pda(&[amm_spike::OWNER], &program_id);
+    let our_nft_mint = pda(&[amm_spike::NFT_MINT], &program_id);
+    svm.airdrop(&seeder, 1_000_000_000).unwrap();
+    let payer_token_a = Pubkey::new_unique();
+    let payer_token_b = Pubkey::new_unique();
+    svm.set_account(
+        payer_token_a,
+        token_account(&mint_a, &seeder, POOL_TOKENS, false),
+    )
+    .unwrap();
+    svm.set_account(
+        payer_token_b,
+        token_account(&mint_b, &seeder, POOL_SOL, true),
+    )
+    .unwrap();
+    let our_position = pda(&[b"position", our_nft_mint.as_ref()], &damm());
+    let our_nft_account = pda(&[b"position_nft_account", our_nft_mint.as_ref()], &damm());
+    let fee_payer = Keypair::new();
+    svm.airdrop(&fee_payer.pubkey(), 10_000_000_000).unwrap();
+    let seed_ix = Instruction::new_with_bytes(
+        program_id,
+        &amm_spike::instruction::Seed {
+            liquidity: LIQUIDITY,
+            sqrt_price: SQRT_PRICE,
+        }
+        .data(),
+        amm_spike::accounts::Seed {
+            seeder,
+            owner,
+            position_nft_mint: our_nft_mint,
+            position_nft_account: our_nft_account,
+            config: CONFIG_11,
+            pool_authority,
+            pool,
+            position: our_position,
+            token_a_mint: mint_a,
+            token_b_mint: mint_b,
+            token_a_vault: vault_a,
+            token_b_vault: vault_b,
+            payer_token_a,
+            payer_token_b,
+            token_program: SPL_TOKEN,
+            token_2022_program: TOKEN_2022,
+            system_program: system_program::ID,
+            event_authority,
+            amm_program: damm(),
+        }
+        .to_account_metas(None),
+    );
+    let ours = try_send_with(&mut svm, &[seed_ix], &[&fee_payer]);
+    println!("SQUAT Prequel's own seed for the same address: {ours:?}");
+    let err = ours.expect_err("Prequel's seed must fail once the pool address is taken");
+    assert!(err.contains("already in use"), "unexpected failure: {err}");
 }
 
 fn squat_liquidity() -> u128 {
