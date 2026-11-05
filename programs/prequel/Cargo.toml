@@ -35,6 +35,7 @@ solana-transaction = "4"
 solana-signer = "3"
 solana-keypair = "3"
 solana-account = "4"
+solana-rent = "4"
 base64 = "0.22"
 
 

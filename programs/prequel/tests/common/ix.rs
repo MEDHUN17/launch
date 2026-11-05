@@ -273,3 +273,83 @@ impl Env {
         self.send(&[ix], &[wallet])
     }
 }
+
+// ---- close / void / reject / refund --------------------------------------------------------------------------------
+
+pub fn close_window(caller: &Pubkey, event_id: u64) -> Instruction {
+    build(
+        prequel::instruction::CloseWindow {},
+        prequel::accounts::CloseWindow {
+            caller: *caller,
+            event: event_pda(event_id),
+        },
+    )
+}
+
+pub fn void_event(admin: &Pubkey, event_id: u64) -> Instruction {
+    build(
+        prequel::instruction::VoidEvent {},
+        prequel::accounts::VoidEvent {
+            admin: *admin,
+            config: config_pda(),
+            event: event_pda(event_id),
+        },
+    )
+}
+
+pub fn reject_candidate(admin: &Pubkey, event_id: u64, candidate: &Pubkey) -> Instruction {
+    build(
+        prequel::instruction::RejectCandidate {},
+        prequel::accounts::RejectCandidate {
+            admin: *admin,
+            config: config_pda(),
+            event: event_pda(event_id),
+            candidate: *candidate,
+        },
+    )
+}
+
+/// `with_share`: also close the wallet's co-proposer share (pass `false` to omit the account).
+pub fn refund(wallet: &Pubkey, event_id: u64, candidate: &Pubkey, with_share: bool) -> Instruction {
+    build(
+        prequel::instruction::Refund {},
+        prequel::accounts::Refund {
+            wallet: *wallet,
+            event: event_pda(event_id),
+            candidate: *candidate,
+            vault: vault_pda(candidate),
+            commitment: commitment_pda(candidate, wallet),
+            co_proposer_share: with_share.then(|| coproposer_pda(candidate, wallet)),
+        },
+    )
+}
+
+impl Env {
+    pub fn do_refund(
+        &mut self,
+        wallet: &solana_keypair::Keypair,
+        event_id: u64,
+        candidate: &Pubkey,
+    ) -> Result<Sent, Failed> {
+        let with_share = self.exists(&coproposer_pda(candidate, &wallet.pubkey()));
+        self.send(
+            &[refund(&wallet.pubkey(), event_id, candidate, with_share)],
+            &[wallet],
+        )
+    }
+    pub fn do_void(&mut self, event_id: u64) -> Result<Sent, Failed> {
+        let admin = self.admin.insecure_clone();
+        self.send(&[void_event(&admin.pubkey(), event_id)], &[&admin])
+    }
+    pub fn do_reject(&mut self, event_id: u64, candidate: &Pubkey) -> Result<Sent, Failed> {
+        let admin = self.admin.insecure_clone();
+        self.send(
+            &[reject_candidate(&admin.pubkey(), event_id, candidate)],
+            &[&admin],
+        )
+    }
+    pub fn do_close(&mut self, event_id: u64) -> Result<Sent, Failed> {
+        let caller = self.wallet(1);
+        self.send(&[close_window(&caller.pubkey(), event_id)], &[&caller])
+    }
+}

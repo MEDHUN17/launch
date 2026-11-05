@@ -57,4 +57,20 @@ pub mod prequel {
     pub fn co_propose(ctx: Context<CoPropose>, amount: u64) -> Result<()> {
         instructions::candidates::handle_co_propose(ctx, amount)
     }
+
+    pub fn close_window(ctx: Context<CloseWindow>) -> Result<()> {
+        instructions::lifecycle::handle_close_window(ctx)
+    }
+
+    pub fn void_event(ctx: Context<VoidEvent>) -> Result<()> {
+        instructions::lifecycle::handle_void_event(ctx)
+    }
+
+    pub fn reject_candidate(ctx: Context<RejectCandidate>) -> Result<()> {
+        instructions::lifecycle::handle_reject_candidate(ctx)
+    }
+
+    pub fn refund(ctx: Context<Refund>) -> Result<()> {
+        instructions::lifecycle::handle_refund(ctx)
+    }
 }
