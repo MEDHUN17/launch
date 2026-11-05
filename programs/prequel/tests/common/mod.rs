@@ -125,7 +125,7 @@ pub struct Env {
 impl Env {
     /// Program deployed with `deployer` as upgrade authority, clock at `T0`, four funded role keys.
     pub fn new() -> Env {
-        let mut svm = LiteSVM::new();
+        let mut svm = LiteSVM::new().with_precompiles();
         svm.set_sysvar(&Clock {
             slot: 1_000,
             epoch_start_timestamp: T0,

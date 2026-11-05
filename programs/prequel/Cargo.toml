@@ -21,7 +21,7 @@ custom-panic = []
 
 
 [dependencies]
-anchor-lang = "1.2.2"
+anchor-lang = { version = "1.2.2", features = ["init-if-needed"] }
 # Anchor 1.2.2 no longer re-exports these; both are official Solana SDK crates already in the dependency graph.
 # Versions match anchor-lang's default `solana-v3` compatibility set.
 solana-sha256-hasher = { version = "3", features = ["sha2"] }
@@ -29,7 +29,7 @@ solana-instructions-sysvar = "3"
 
 [dev-dependencies]
 # Cargo.lock pins LiteSVM's Rust-1.89-compatible dependency graph.
-litesvm = "0.15.0"
+litesvm = { version = "0.15.0", features = ["precompiles"] }
 solana-message = "4"
 solana-transaction = "4"
 solana-signer = "3"
