@@ -77,7 +77,7 @@ Done when: Happy and failure tests for every instruction; invariants 1, 2, 4, 5 
 Evidence for the invariants: `programs/prequel/tests/invariants.rs` (16 seeded walks of 80 steps; coverage floors; two deliberate bugs confirmed to fail it) plus the named tests in `docs/PHASE1_DESIGN.md` section 7. The invariant 6 check (pause never blocks refund) also passes: `neither_pause_flag_blocks_refund_reject_void_or_close`.
 
 Second code review (D-019): no High finding. Fixed and tested: frozen settings enforced by every handler, ProgramData binding, reserved bytes must be zero, ticker-table version, co-proposer share closed with its commitment, name and URI rules, key validation, independent attestation known answers (Rust and TypeScript), byte-layout pinning. Open items are decisions for you, listed above.
-Mutation sweep (`python3 -I scripts/mutation-sweep.py`): run in progress when this was written; the result is recorded below once it finishes.
+Mutation sweep (`python3 -I scripts/mutation-sweep.py`): 71 deliberate bugs, each alone, against a green baseline: 70 killed on the first run and the one survivor (a swapped pair of one-byte fields that held equal values in the layout test) killed after the test was tightened. Final: 71 of 71 killed (D-019).
 
 Invariants 1, 2 and 3 are worded in a way that donations and AMM rounding break; see Q-05 for the proposed replacements.
 

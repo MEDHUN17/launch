@@ -64,9 +64,16 @@ fn every_account_keeps_its_fields_at_the_documented_offsets() {
     params.serialize(&mut params_bytes).unwrap();
     assert_eq!(params_bytes.len(), 114);
 
-    let (ev, ev_key) = env.create_default_event("KXLAYOUT-1");
+    // Three outcomes and a proposal on outcome 2: no two neighbouring one-byte fields may hold the same value here,
+    // or swapping them in the struct would go unnoticed (outcome 2, layout_version 1, status 0, outcome_count 3).
+    let mut event_args = default_event_args(env.now(), "KXLAYOUT-1");
+    event_args.outcome_count = 3;
+    let admin = env.admin.insecure_clone();
+    env.send(&[create_event(&admin.pubkey(), 0, event_args)], &[&admin])
+        .unwrap();
+    let (ev, ev_key) = (0u64, event_pda(0));
     let (proposer, committer, co) = (env.wallet(50), env.wallet(50), env.wallet(50));
-    let args = propose_args("b0b", 1, SOL / 10);
+    let args = propose_args("c0c", 2, SOL / 10);
     let c = env.do_propose(&proposer, ev, &args).unwrap();
     env.warp_to(T0 + 10);
     env.do_commit(&committer, ev, &c, SOL / 5).unwrap();
@@ -95,7 +102,7 @@ fn every_account_keeps_its_fields_at_the_documented_offsets() {
     let d = raw(&env, &ev_key);
     assert_eq!(d.len(), 527);
     assert_eq!(u64_at(&d, 8), 0, "id");
-    assert_eq!(&d[16..25], &[0, 0, 2, 1, 1, 255, 255, 0, bump_of(&[b"event", &0u64.to_le_bytes()])],
+    assert_eq!(&d[16..25], &[0, 0, 3, 1, 1, 255, 255, 0, bump_of(&[b"event", &0u64.to_le_bytes()])],
         "status Open, source, outcome_count, canon_version, layout_version, proposed, resolved, void_reason, bump");
     bytes(&d, 25, &sha256(b"KXLAYOUT-1"), "external_id_hash");
     assert_eq!(
@@ -118,8 +125,8 @@ fn every_account_keeps_its_fields_at_the_documented_offsets() {
     zeros(&d, 145, 209, "evidence hash and disputer");
     assert_eq!(
         &d[209..217],
-        &[0, 1, 0, 0, 0, 0, 0, 0],
-        "candidate_count: one candidate on outcome 1"
+        &[0, 0, 1, 0, 0, 0, 0, 0],
+        "candidate_count: one candidate on outcome 2"
     );
     bytes(&d, 217, &params_bytes, "frozen params");
     zeros(&d, 331, 459, "event reserved");
@@ -142,20 +149,20 @@ fn every_account_keeps_its_fields_at_the_documented_offsets() {
     // ---- Candidate
     let d = raw(&env, &c);
     assert_eq!(d.len(), 627);
+    let candidate_bump = bump_of(&[b"candidate", ev_key.as_ref(), &[2], &args.canon_hash]);
+    let vault_bump = bump_of(&[b"vault", c.as_ref()]);
+    assert_ne!(
+        candidate_bump, vault_bump,
+        "this scenario needs two different bumps, or swapping the fields would go unnoticed; change the ticker"
+    );
     assert_eq!(
         &d[8..13],
-        &[
-            0,
-            1,
-            1,
-            bump_of(&[b"candidate", ev_key.as_ref(), &[1], &args.canon_hash]),
-            bump_of(&[b"vault", c.as_ref()])
-        ],
-        "status Pending, outcome, layout_version, bump, vault_bump"
+        &[0, 2, 1, candidate_bump, vault_bump],
+        "status Pending, outcome 2, layout_version 1, bump, vault_bump"
     );
     bytes(&d, 13, ev_key.as_ref(), "event");
     bytes(&d, 45, proposer.pubkey().as_ref(), "proposer");
-    bytes(&d, 77, &sha256(b"BOB"), "canon_hash (b0b becomes BOB)");
+    bytes(&d, 77, &sha256(b"COC"), "canon_hash (c0c becomes COC)");
     bytes(&d, 109, &args.image_hash, "image_hash");
     assert_eq!(
         [u64_at(&d, 141), u64_at(&d, 149), u64_at(&d, 157)],
@@ -175,11 +182,11 @@ fn every_account_keeps_its_fields_at_the_documented_offsets() {
     );
     zeros(&d, 197, 445, "launch results and reserved");
     assert_eq!(u32_at(&d, 445), 8);
-    bytes(&d, 449, b"b0b Coin", "name");
+    bytes(&d, 449, b"c0c Coin", "name");
     assert_eq!(u32_at(&d, 457), 3);
-    bytes(&d, 461, b"B0B", "ticker, uppercased and unmapped");
+    bytes(&d, 461, b"C0C", "ticker, uppercased and unmapped");
     assert_eq!(u32_at(&d, 464), 14);
-    bytes(&d, 468, b"ipfs://bafyb0b", "uri");
+    bytes(&d, 468, b"ipfs://bafyc0c", "uri");
 
     // ---- Vault
     let d = raw(&env, &vault_pda(&c));
