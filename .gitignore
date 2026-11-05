@@ -1,0 +1,28 @@
+# Rust / Anchor
+target
+.anchor
+**/*.rs.bk
+test-ledger
+.surfpool
+
+# JS
+node_modules
+dist
+.next
+.turbo
+*.tsbuildinfo
+
+# Secrets and keys: never commit (SPEC §12)
+.env
+.env.*
+!.env.example
+*-keypair.json
+**/keypairs/
+**/id.json
+*.pem
+
+# Generated or fetched artifacts
+.out
+fixtures/**/*.so
+.DS_Store
+.yarn

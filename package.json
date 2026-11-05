@@ -1,0 +1,29 @@
+{
+  "name": "prequel",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Prequel: a Solana launchpad for event-conditional memecoins",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "spike:kalshi": "node scripts/spikes/kalshi/spike.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "turbo": "2.11.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
+  }
+}

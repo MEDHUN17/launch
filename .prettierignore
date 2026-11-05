@@ -1,0 +1,9 @@
+# SPEC.md is the source of truth: never reformat it.
+SPEC.md
+target
+dist
+.next
+.turbo
+.out
+pnpm-lock.yaml
+Cargo.lock
