@@ -43,7 +43,7 @@ One entry per decision. A version or doc link goes in only after it was read fro
 | ESLint stack | eslint 10.14.0, @eslint/js 10.0.1, typescript-eslint 8.72.1, globals 17.14.0 | |
 | Prettier, Vitest, Vite | 3.9.10, 5.1.0, 8.3.6 | Vite is Vitest's peer. |
 | Next.js, React | 16.4.5, 19.3.1 | Minimal App Router stub builds. |
-| GitHub Actions | `actions/checkout@v4`, `setup-node@v4`, `pnpm/action-setup@v4`, `cache@v4` | **[U]** Newer majors may exist; the sandbox cannot read GitHub APIs outside this repo. The first remote run is the check. |
+| GitHub Actions | `actions/checkout@v4`, `setup-node@v4`, `pnpm/action-setup@v4`, `cache@v4` | **[V-me]** First remote run (2026-11-05): the JS job passed; the program job failed because `cargo install anchor-cli` ran under the repo's Rust 1.89.0 (a locked dependency needs 1.91), fixed by building tools with the stable toolchain. GitHub warned that Node 20 actions (`checkout@v4`, `cache@v4`) are forced onto Node 24: bump the majors when verified. |
 
 - **Sandbox quirks:** Node's built-in `fetch` ignores the proxy, so export `NODE_USE_ENV_PROXY=1`; put `~/.local/share/solana/install/active_release/bin` on `PATH`. `anchor build` warns that the keypair and `declare_id!` differ; program keypairs are never committed, so the real id is set in Phase 10.
 - **Dev dependencies added beyond SPEC §4** (approved with the Phase 0 go-ahead): vitest, vite, eslint stack, prettier, `@types/node`; in the throwaway AMM spike only: `bytemuck`, `serde_json`, `base64`, `solana-account`.

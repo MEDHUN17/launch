@@ -19,12 +19,14 @@ fi
 
 if ! anchor --version 2>/dev/null | grep -q "anchor-cli ${ANCHOR_VERSION}\$"; then
   echo ">> installing anchor-cli ${ANCHOR_VERSION}"
-  cargo install anchor-cli --version "${ANCHOR_VERSION}" --locked
+  # Tool builds use the stable toolchain: the repo's rust-toolchain.toml pins 1.89.0, but anchor-cli's locked
+  # dependencies need a newer rustc (cargo-platform 0.3.3 wants 1.91).
+  RUSTUP_TOOLCHAIN=stable cargo install anchor-cli --version "${ANCHOR_VERSION}" --locked
 fi
 
 if [ -z "${BOOTSTRAP_SKIP_VERIFY:-}" ] && ! solana-verify --version 2>/dev/null | grep -q "${SOLANA_VERIFY_VERSION}"; then
   echo ">> installing solana-verify ${SOLANA_VERIFY_VERSION}"
-  cargo install solana-verify --version "${SOLANA_VERIFY_VERSION}" --locked
+  RUSTUP_TOOLCHAIN=stable cargo install solana-verify --version "${SOLANA_VERIFY_VERSION}" --locked
 fi
 
 echo "--- toolchain ---"
