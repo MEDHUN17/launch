@@ -313,3 +313,73 @@ mod tests {
         assert_ne!(d, signed_digest(&Attested { expiry: 6, ..a }));
     }
 }
+
+#[cfg(test)]
+mod vector_tests {
+    use super::*;
+
+    fn unhex(s: &str) -> Vec<u8> {
+        assert!(s.len() % 2 == 0, "odd hex length");
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex digit"))
+            .collect()
+    }
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+    fn arr(s: &str) -> [u8; 32] {
+        unhex(s).try_into().expect("32 bytes")
+    }
+
+    /// Known answers written by `packages/shared/canon/gen-attestation-vectors.py` from the decision text alone
+    /// (hashlib and struct, no shared code), and checked by the TypeScript tests too. This pins the whole layout:
+    /// the order of the fields, the u16 length prefixes, the signed little-endian expiry, and which form of the
+    /// ticker is hashed. Tests that sign with this module's own functions could not catch a mistake in any of them.
+    #[test]
+    fn matches_the_shared_known_answers() {
+        let vectors = include_str!("../../../packages/shared/canon/attestation-vectors.tsv");
+        let mut checked = 0;
+        for line in vectors
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+        {
+            let c: Vec<&str> = line.split('\t').collect();
+            assert_eq!(c.len(), 15, "bad vector line: {line:?}");
+            let (program, config, event, proposer) = (
+                Pubkey::new_from_array(arr(c[1])),
+                Pubkey::new_from_array(arr(c[2])),
+                Pubkey::new_from_array(arr(c[3])),
+                Pubkey::new_from_array(arr(c[10])),
+            );
+            let (canon_hash, image_hash) = (arr(c[5]), arr(c[9]));
+            let content = content_hash(c[6], c[7], c[8]);
+            assert_eq!(hex(&content), c[12], "content hash of {:?}", c[0]);
+            let attested = Attested {
+                program_id: &program,
+                config: &config,
+                event: &event,
+                outcome: c[4].parse().expect("outcome"),
+                canon_hash: &canon_hash,
+                content_hash: &content,
+                image_hash: &image_hash,
+                proposer: &proposer,
+                expiry: c[11].parse().expect("expiry"),
+            };
+            assert_eq!(
+                hex(&expected_message(&attested)),
+                c[13],
+                "message of {:?}",
+                c[0]
+            );
+            assert_eq!(
+                hex(&signed_digest(&attested)),
+                c[14],
+                "digest of {:?}",
+                c[0]
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 4, "all vectors were checked");
+    }
+}

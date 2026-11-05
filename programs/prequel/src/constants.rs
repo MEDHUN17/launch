@@ -21,6 +21,9 @@ pub const NO_OUTCOME: u8 = u8::MAX;
 pub const MAX_NAME_LEN: usize = 32;
 /// Short enough that a signed proposal transaction stays well under the 1,232-byte packet limit; an IPFS URL is ~66.
 pub const MAX_URI_LEN: usize = 128;
+/// Metadata URIs must start with one of these (lowercase). Wallets and explorers fetch them, and a `data:` or
+/// `javascript:` URI would be a hazard to any client that renders the link.
+pub const URI_SCHEMES: [&str; 2] = ["ipfs://", "https://"];
 pub const MAX_EXTERNAL_ID_LEN: usize = 64;
 /// Event source codes. v0 lists Kalshi markets only.
 pub const SOURCE_KALSHI: u8 = 0;

@@ -63,9 +63,9 @@ pub enum PrequelError {
     // candidates
     #[msg("Outcome index is out of range for this event")]
     InvalidOutcome,
-    #[msg("Name is empty or too long")]
+    #[msg("Name is empty, too long, or contains control or invisible formatting characters")]
     NameInvalid,
-    #[msg("Metadata URI is empty or too long")]
+    #[msg("Metadata URI must start with ipfs:// or https://, be printable ASCII without spaces, and fit 128 bytes")]
     UriInvalid,
     #[msg("Ticker must be 2 to 10 characters")]
     TickerLength,
@@ -101,4 +101,11 @@ pub enum PrequelError {
     AttestationInvalid,
     #[msg("The attestation has expired")]
     AttestationExpired,
+    // added after the second review; appended so that existing error codes keep their numbers
+    #[msg("Reserved settings bytes must be zero")]
+    ParamsReservedNotZero,
+    #[msg("The event was created under a different ticker table version")]
+    CanonVersionMismatch,
+    #[msg("This wallet co-proposed: pass its co-proposer share so that it is closed with the commitment")]
+    CoProposerShareRequired,
 }

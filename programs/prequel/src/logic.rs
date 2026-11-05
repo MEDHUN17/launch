@@ -48,6 +48,11 @@ pub fn validate_params(p: &Params) -> Res<()> {
     if !(MIN_SLATE..=MAX_SLATE).contains(&p.max_candidates_per_outcome) {
         return Err(PrequelError::SlateSizeOutOfRange);
     }
+    // The reserved bytes will later hold settings. Whatever a client sends today would be frozen into every event
+    // and read as a setting tomorrow, so only zero is accepted.
+    if p.reserved != [0u8; 32] {
+        return Err(PrequelError::ParamsReservedNotZero);
+    }
     Ok(())
 }
 
@@ -162,16 +167,53 @@ pub fn is_refundable(event: EventStatus, candidate: CandidateStatus) -> bool {
 }
 
 pub fn validate_name(name: &str) -> Res<()> {
-    if name.trim().is_empty() || name.len() > MAX_NAME_LEN || name.chars().any(char::is_control) {
+    if name.trim().is_empty()
+        || name.len() > MAX_NAME_LEN
+        || name.chars().any(|c| c.is_control() || is_format_char(c))
+    {
         return Err(PrequelError::NameInvalid);
     }
     Ok(())
 }
 
+/// Unicode format characters (category Cf) plus the line and paragraph separators. They are invisible, and some
+/// reorder the text around them (the bidi overrides U+202A to U+202E and isolates U+2066 to U+2069), so a name
+/// containing one can display as something else. Zero-width joiners go too, which costs a few multi-part emoji;
+/// the Canon service applies fuller checks (normalization, homoglyphs) before it signs anything.
+fn is_format_char(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x00AD
+            | 0x0600..=0x0605
+            | 0x061C
+            | 0x06DD
+            | 0x070F
+            | 0x08E2
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x2028..=0x202E
+            | 0x2060..=0x2064
+            | 0x2066..=0x206F
+            | 0xFEFF
+            | 0xFFF9..=0xFFFB
+            | 0x110BD
+            | 0x110CD
+            | 0x13430..=0x1343F
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE0001
+            | 0xE0020..=0xE007F
+    )
+}
+
 pub fn validate_uri(uri: &str) -> Res<()> {
-    // Printable ASCII only (no spaces, no control characters): anything else must be percent-encoded.
-    if uri.is_empty() || uri.len() > MAX_URI_LEN || !uri.bytes().all(|b| (0x21..=0x7e).contains(&b))
-    {
+    // Printable ASCII only (no spaces, no control characters): anything else must be percent-encoded. The scheme
+    // must be one of URI_SCHEMES and something must follow it.
+    let printable = uri.bytes().all(|b| (0x21..=0x7e).contains(&b));
+    let scheme_ok = URI_SCHEMES
+        .iter()
+        .any(|s| uri.len() > s.len() && uri.starts_with(s));
+    if uri.len() > MAX_URI_LEN || !printable || !scheme_ok {
         return Err(PrequelError::UriInvalid);
     }
     Ok(())
@@ -422,8 +464,13 @@ mod tests {
         );
         assert!(validate_name("a\nb").is_err() && validate_name("a\u{0}b").is_err());
         assert!(validate_uri("ipfs://bafy").is_ok() && validate_uri("").is_err());
-        assert!(validate_uri(&"u".repeat(128)).is_ok() && validate_uri(&"u".repeat(129)).is_err());
+        assert!(
+            validate_uri(&format!("ipfs://{}", "u".repeat(121))).is_ok()
+                && validate_uri(&format!("ipfs://{}", "u".repeat(122))).is_err(),
+            "128 bytes including the scheme"
+        );
         assert!(validate_external_id("KXNBA-1").is_ok() && validate_external_id("").is_err());
+        assert!(validate_external_id(&"x".repeat(64)).is_ok());
         assert!(validate_external_id(&"x".repeat(65)).is_err());
         assert!(validate_outcome_count(1).is_err() && validate_outcome_count(2).is_ok());
         assert!(validate_outcome_count(8).is_ok() && validate_outcome_count(9).is_err());
@@ -542,5 +589,239 @@ mod review_tests {
         ] {
             assert!(validate_uri(bad).is_err(), "{bad:?}");
         }
+    }
+}
+
+/// Added after the second review: both sides of every bound, the reserved bytes, and the text rules.
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    fn code(e: PrequelError) -> u32 {
+        e.into()
+    }
+
+    fn accepts(label: &str, f: impl FnOnce(&mut Params)) {
+        let mut p = Params::spec_defaults();
+        f(&mut p);
+        assert!(
+            validate_params(&p).is_ok(),
+            "{label} should be accepted: {:?}",
+            validate_params(&p)
+        );
+    }
+
+    fn rejects(label: &str, want: PrequelError, f: impl FnOnce(&mut Params)) {
+        let mut p = Params::spec_defaults();
+        f(&mut p);
+        match validate_params(&p) {
+            Err(e) => assert_eq!(code(e), code(want), "{label}"),
+            Ok(()) => panic!("{label} should be rejected"),
+        }
+    }
+
+    #[test]
+    fn every_bound_is_inclusive_and_one_step_outside_is_refused() {
+        use PrequelError as E;
+        // success fee and fee split
+        accepts("fee 0", |p| p.success_fee_bps = 0);
+        accepts("fee at cap", |p| p.success_fee_bps = MAX_SUCCESS_FEE_BPS);
+        rejects("fee over cap", E::SuccessFeeTooHigh, |p| {
+            p.success_fee_bps = MAX_SUCCESS_FEE_BPS + 1
+        });
+        rejects("split one short", E::FeeSplitInvalid, |p| {
+            p.split_treasury_bps -= 1
+        });
+        rejects("split one over", E::FeeSplitInvalid, |p| {
+            p.split_treasury_bps += 1
+        });
+        rejects("split cannot wrap", E::FeeSplitInvalid, |p| {
+            p.split_proposer_bps = u16::MAX;
+            p.split_coprop_bps = u16::MAX;
+            p.split_treasury_bps = u16::MAX;
+        });
+        accepts("split moved between slices", |p| {
+            p.split_proposer_bps = 10_000;
+            p.split_coprop_bps = 0;
+            p.split_treasury_bps = 0;
+        });
+        // dispute window, resolution delay, launch window
+        accepts("dispute window min", |p| {
+            p.dispute_window = MIN_DISPUTE_WINDOW
+        });
+        accepts("dispute window max", |p| {
+            p.dispute_window = MAX_DISPUTE_WINDOW
+        });
+        rejects("dispute window below", E::DisputeWindowOutOfRange, |p| {
+            p.dispute_window = MIN_DISPUTE_WINDOW - 1
+        });
+        rejects("dispute window above", E::DisputeWindowOutOfRange, |p| {
+            p.dispute_window = MAX_DISPUTE_WINDOW + 1
+        });
+        accepts("resolution delay min", |p| {
+            p.max_resolution_delay = MIN_RESOLUTION_DELAY
+        });
+        accepts("resolution delay max", |p| {
+            p.max_resolution_delay = MAX_RESOLUTION_DELAY
+        });
+        rejects(
+            "resolution delay below",
+            E::ResolutionDelayOutOfRange,
+            |p| p.max_resolution_delay = MIN_RESOLUTION_DELAY - 1,
+        );
+        rejects(
+            "resolution delay above",
+            E::ResolutionDelayOutOfRange,
+            |p| p.max_resolution_delay = MAX_RESOLUTION_DELAY + 1,
+        );
+        accepts("launch window min", |p| p.launch_window = MIN_LAUNCH_WINDOW);
+        accepts("launch window max", |p| p.launch_window = MAX_LAUNCH_WINDOW);
+        rejects("launch window below", E::LaunchWindowOutOfRange, |p| {
+            p.launch_window = MIN_LAUNCH_WINDOW - 1
+        });
+        rejects("launch window above", E::LaunchWindowOutOfRange, |p| {
+            p.launch_window = MAX_LAUNCH_WINDOW + 1
+        });
+        // bond and fee
+        accepts("bond min", |p| p.dispute_bond = MIN_DISPUTE_BOND);
+        accepts("bond max", |p| p.dispute_bond = MAX_DISPUTE_BOND);
+        rejects("bond below", E::DisputeBondOutOfRange, |p| {
+            p.dispute_bond = MIN_DISPUTE_BOND - 1
+        });
+        rejects("bond above", E::DisputeBondOutOfRange, |p| {
+            p.dispute_bond = MAX_DISPUTE_BOND + 1
+        });
+        accepts("proposal fee min", |p| p.proposal_fee = MIN_PROPOSAL_FEE);
+        accepts("proposal fee max", |p| p.proposal_fee = MAX_PROPOSAL_FEE);
+        rejects("proposal fee below", E::ProposalFeeOutOfRange, |p| {
+            p.proposal_fee = MIN_PROPOSAL_FEE - 1
+        });
+        rejects("proposal fee above", E::ProposalFeeOutOfRange, |p| {
+            p.proposal_fee = MAX_PROPOSAL_FEE + 1
+        });
+        // min_commit, min_raise, per-wallet cap
+        accepts("min_commit at the floor", |p| {
+            p.min_commit = MIN_COMMIT_FLOOR
+        });
+        rejects("min_commit below the floor", E::MinCommitTooLow, |p| {
+            p.min_commit = MIN_COMMIT_FLOOR - 1
+        });
+        accepts("min_raise at its floor", |p| p.min_raise = MIN_MIN_RAISE);
+        accepts("min_raise at its ceiling", |p| p.min_raise = MAX_MIN_RAISE);
+        rejects("min_raise below its floor", E::MinRaiseOutOfRange, |p| {
+            p.min_raise = MIN_MIN_RAISE - 1
+        });
+        rejects("min_raise above its ceiling", E::MinRaiseOutOfRange, |p| {
+            p.min_raise = MAX_MIN_RAISE + 1
+        });
+        accepts("min_raise equal to min_commit", |p| {
+            p.min_commit = MIN_MIN_RAISE;
+            p.min_raise = MIN_MIN_RAISE;
+        });
+        rejects("min_raise under min_commit", E::MinRaiseOutOfRange, |p| {
+            p.min_commit = 2 * MIN_MIN_RAISE;
+            p.min_raise = 2 * MIN_MIN_RAISE - 1;
+        });
+        accepts("no wallet cap", |p| p.max_commit_per_wallet = 0);
+        accepts("wallet cap equal to min_commit", |p| {
+            p.max_commit_per_wallet = p.min_commit
+        });
+        rejects("wallet cap under min_commit", E::CommitCapTooLow, |p| {
+            p.max_commit_per_wallet = p.min_commit - 1
+        });
+        // slate and cutoff
+        accepts("slate of 1", |p| p.max_candidates_per_outcome = MIN_SLATE);
+        accepts("slate at the maximum", |p| {
+            p.max_candidates_per_outcome = MAX_SLATE
+        });
+        rejects("slate of 0", E::SlateSizeOutOfRange, |p| {
+            p.max_candidates_per_outcome = 0
+        });
+        rejects("slate over the maximum", E::SlateSizeOutOfRange, |p| {
+            p.max_candidates_per_outcome = MAX_SLATE + 1
+        });
+        accepts("no cutoff", |p| p.proposal_cutoff = 0);
+        accepts("cutoff at the maximum", |p| {
+            p.proposal_cutoff = MAX_PROPOSAL_CUTOFF
+        });
+        rejects(
+            "cutoff over the maximum",
+            E::ProposalCutoffOutOfRange,
+            |p| p.proposal_cutoff = MAX_PROPOSAL_CUTOFF + 1,
+        );
+        rejects("negative cutoff", E::ProposalCutoffOutOfRange, |p| {
+            p.proposal_cutoff = -1
+        });
+    }
+
+    #[test]
+    fn reserved_settings_bytes_must_be_zero() {
+        for i in [0usize, 15, 31] {
+            rejects(
+                "non-zero reserved byte",
+                PrequelError::ParamsReservedNotZero,
+                |p| p.reserved[i] = 1,
+            );
+        }
+        accepts("all-zero reserved", |p| p.reserved = [0; 32]);
+    }
+
+    #[test]
+    fn names_reject_invisible_and_reordering_characters() {
+        for bad in [
+            "a\u{200B}b",     // zero-width space
+            "a\u{200D}b",     // zero-width joiner
+            "\u{202E}evil",   // right-to-left override
+            "x\u{2066}y",     // left-to-right isolate
+            "ab\u{FEFF}",     // byte order mark
+            "soft\u{00AD}hy", // soft hyphen
+            "a\u{2028}b",     // line separator
+            "\u{061C}x",      // Arabic letter mark
+            "tag\u{E0067}",   // tag character
+        ] {
+            assert_eq!(
+                validate_name(bad).map_err(code),
+                Err(code(PrequelError::NameInvalid)),
+                "{bad:?}"
+            );
+        }
+        for good in [
+            "Pepe",
+            "P\u{e9}p\u{e9}",
+            "\u{65e5}\u{672c}\u{8a9e}",
+            "Coin \u{1f438}",
+            "A-B_C.1",
+            "\u{dc}n\u{ef}code",
+        ] {
+            assert!(validate_name(good).is_ok(), "{good:?}");
+        }
+    }
+
+    #[test]
+    fn uris_need_an_allowed_scheme_and_something_after_it() {
+        let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+        assert!(validate_uri(&format!("ipfs://{cid}")).is_ok());
+        assert!(validate_uri(&format!("https://gateway.example/ipfs/{cid}")).is_ok());
+        for bad in [
+            "",
+            "ipfs://",
+            "https://",
+            "http://example.com/x",
+            "javascript:alert(1)",
+            "data:text/plain;base64,AAAA",
+            "IPFS://x",
+            "ftp://x",
+            "//example.com/x",
+            "ipfs:/x",
+            "bafybei",
+        ] {
+            assert_eq!(
+                validate_uri(bad).map_err(code),
+                Err(code(PrequelError::UriInvalid)),
+                "{bad:?}"
+            );
+        }
+        assert!(validate_uri(&format!("ipfs://{}", "u".repeat(121))).is_ok());
+        assert!(validate_uri(&format!("ipfs://{}", "u".repeat(122))).is_err());
     }
 }

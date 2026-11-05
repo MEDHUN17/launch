@@ -357,6 +357,8 @@ fn attestation_failures() {
         [u16::MAX; 3],
     );
     two.data[0] = 2;
+    // (the precompile itself refuses this one; the program's own count check is covered with two VALID signatures
+    // in attestation_vectors.rs)
     assert!(send_with(&mut env, &w, vec![two], &args).is_err());
 
     // expired: valid yesterday, not today
@@ -485,7 +487,7 @@ fn a_commit_to_a_candidate_of_another_event_is_refused() {
     let w = env.wallet(10);
     // the right candidate, but presented under event 1: the has_one / seeds constraints refuse it
     let ix = commit(&w.pubkey(), id1, &c, SOL);
-    assert!(env.send(&[ix], &[&w]).is_err());
+    assert_account_rejected(env.send(&[ix], &[&w]), "a candidate under another event");
 }
 
 // ---- co_propose -------------------------------------------------------------------------------------------------
@@ -557,9 +559,6 @@ fn a_wallet_that_already_committed_can_still_co_propose() {
 fn co_propose_failures() {
     let (mut env, c) = with_candidate();
     let w = env.wallet(100);
-    // the proposer is already in
-    let proposer_key = env.load::<Candidate>(&c).proposer;
-    assert_eq!(proposer_key, env.load::<Candidate>(&c).proposer);
     // bad amounts
     assert_err!(
         env.do_co_propose(&w, 0, &c, SOL / 20 - 1),

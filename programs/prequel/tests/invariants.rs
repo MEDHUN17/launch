@@ -361,6 +361,7 @@ fn run_walk(seed: u64, steps: usize) -> Stats {
     let mut w = World::new();
     let mut st = Stats::default();
     let mut last_rank: BTreeMap<u64, u8> = BTreeMap::new();
+    let mut last_candidate: BTreeMap<Pubkey, CandidateStatus> = BTreeMap::new();
 
     for step in 0..steps {
         let before = w.snapshot();
@@ -432,6 +433,7 @@ fn run_walk(seed: u64, steps: usize) -> Stats {
             Op::Commit | Op::CoPropose => {
                 let ci = rng.below(w.cands.len());
                 let (key, cev) = (w.cands[ci].key, w.cands[ci].event);
+                desc += &format!(" (candidate {ci} of event {cev})");
                 let pre = w.event(cev);
                 st.note_money_in(&pre, now);
                 if op == Op::Commit {
@@ -452,6 +454,7 @@ fn run_walk(seed: u64, steps: usize) -> Stats {
             }
             Op::Refund => {
                 let ci = rng.below(w.cands.len());
+                desc += &format!(" (candidate {ci} of event {})", w.cands[ci].event);
                 match w.refund_checked(ci, wi, &desc) {
                     Ok(()) => {
                         changed = true;
@@ -463,6 +466,7 @@ fn run_walk(seed: u64, steps: usize) -> Stats {
             Op::Reject => {
                 let ci = rng.below(w.cands.len());
                 let (key, cev) = (w.cands[ci].key, w.cands[ci].event);
+                desc += &format!(" (candidate {ci} of event {cev})");
                 let pre = w.event(cev);
                 if w.env.do_reject(cev, &key).is_ok() {
                     changed = true;
@@ -541,6 +545,24 @@ fn run_walk(seed: u64, steps: usize) -> Stats {
             };
             let prev = last_rank.insert(*id, rank).unwrap_or(0);
             assert!(rank >= prev, "event {id} status went backwards ({desc})");
+        }
+        // candidate status: Pending may become Rejected or Refunding; those two never change again
+        for c in &w.cands {
+            let now_status = w.env.load::<Candidate>(&c.key).status;
+            let before = last_candidate
+                .insert(c.key, now_status)
+                .unwrap_or(CandidateStatus::Pending);
+            let allowed = before == now_status
+                || (before == CandidateStatus::Pending
+                    && matches!(
+                        now_status,
+                        CandidateStatus::Rejected | CandidateStatus::Refunding
+                    ));
+            assert!(
+                allowed,
+                "candidate {} went {before:?} -> {now_status:?} ({desc})",
+                c.key
+            );
         }
     }
 

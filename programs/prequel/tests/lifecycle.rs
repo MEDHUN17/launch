@@ -225,20 +225,18 @@ fn refunds_still_work_after_the_rent_rate_falls() {
 fn only_the_committer_can_refund_and_nobody_can_use_another_account() {
     let mut s = voided_scene();
     let stranger = s.env.wallet(10);
-    assert!(
-        s.env
-            .send(
-                &[refund(&stranger.pubkey(), 0, &s.candidate, false)],
-                &[&stranger]
-            )
-            .is_err(),
-        "no commitment"
+    assert_account_rejected(
+        s.env.send(
+            &[refund(&stranger.pubkey(), 0, &s.candidate, false)],
+            &[&stranger],
+        ),
+        "a wallet with no commitment",
     );
     // presenting someone else's commitment fails the seeds check
     let victim = s.wallets[1].0.pubkey();
     let mut ix = refund(&stranger.pubkey(), 0, &s.candidate, false);
     ix.accounts[4].pubkey = commitment_pda(&s.candidate, &victim);
-    assert!(s.env.send(&[ix], &[&stranger]).is_err());
+    assert_account_rejected(s.env.send(&[ix], &[&stranger]), "someone else's commitment");
     // an unrelated vault is rejected
     let other = s.env.wallet(100);
     let (id1, _) = s.env.create_default_event("KXNBA-OTHER");
@@ -248,10 +246,10 @@ fn only_the_committer_can_refund_and_nobody_can_use_another_account() {
         .unwrap();
     let mut ix = refund(&s.wallets[0].0.pubkey(), 0, &s.candidate, false);
     ix.accounts[3].pubkey = vault_pda(&c2);
-    assert!(s
-        .env
-        .send(&[ix], &[&s.wallets[0].0.insecure_clone()])
-        .is_err());
+    assert_account_rejected(
+        s.env.send(&[ix], &[&s.wallets[0].0.insecure_clone()]),
+        "another candidate's vault",
+    );
     assert_eq!(s.env.load::<Candidate>(&s.candidate).refunded_total, 0);
 }
 

@@ -111,6 +111,31 @@ macro_rules! assert_err {
     }};
 }
 
+/// True when a transaction was stopped by account validation before any handler logic ran: an Anchor framework
+/// error (constraint, discriminator, owner, not initialized, wrong program: codes 2000 to 3999) or the program's own
+/// `AccountMismatch`. Swap tests use this so that they cannot pass because something else went wrong.
+pub fn is_account_rejection(f: &Failed) -> bool {
+    match f.code() {
+        Some(c) => {
+            (2000..4000).contains(&c)
+                || c == u32::from(prequel::error::PrequelError::AccountMismatch)
+        }
+        None => false,
+    }
+}
+
+pub fn assert_account_rejected(result: Result<Sent, Failed>, what: &str) {
+    match result {
+        Ok(_) => panic!("{what}: the transaction succeeded"),
+        Err(f) => assert!(
+            is_account_rejection(&f),
+            "{what}: expected an account-validation error, got {} | logs: {:#?}",
+            f.debug,
+            f.logs
+        ),
+    }
+}
+
 // ---- environment -------------------------------------------------------------------------------------------------
 
 pub struct Env {
@@ -213,12 +238,16 @@ impl Env {
 /// LiteSVM deploys through the upgradeable loader with no upgrade authority; give it one so that
 /// `initialize_config`'s deployer check can be exercised. ProgramData = tag 3 (u32) | slot (u64) | Some(authority).
 pub fn set_upgrade_authority(svm: &mut LiteSVM, authority: &Pubkey) {
-    let address = program_data_address();
-    let mut acc: Account = svm.get_account(&address).expect("program data account");
+    set_upgrade_authority_of(svm, &program_data_address(), authority);
+}
+
+/// The same for any ProgramData account, so that a test can deploy a second program under an attacker's authority.
+pub fn set_upgrade_authority_of(svm: &mut LiteSVM, program_data: &Pubkey, authority: &Pubkey) {
+    let mut acc: Account = svm.get_account(program_data).expect("program data account");
     acc.data[0..4].copy_from_slice(&3u32.to_le_bytes());
     acc.data[12] = 1;
     acc.data[13..45].copy_from_slice(authority.as_ref());
-    svm.set_account(address, acc).unwrap();
+    svm.set_account(*program_data, acc).unwrap();
 }
 
 // ---- Ed25519 precompile instruction (attestation tests) --------------------------------------------------------

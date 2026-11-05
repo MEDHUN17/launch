@@ -127,6 +127,13 @@ pub fn handle_propose_candidate(ctx: Context<ProposeCandidate>, args: ProposeArg
         args.outcome < event.outcome_count,
         PrequelError::InvalidOutcome
     );
+    // The canonical ticker is defined by the table version the event was created under. If a later program version
+    // ships a different table, it must dispatch on the event's version; until then, refuse rather than apply the
+    // wrong table (which could let a duplicate through).
+    require!(
+        event.canon_version == canon::CANON_VERSION,
+        PrequelError::CanonVersionMismatch
+    );
     logic::validate_name(&args.name)?;
     logic::validate_uri(&args.uri)?;
     let display = String::from_utf8(canon::display_ticker(&args.ticker).map_err(canon_err)?)
@@ -432,6 +439,8 @@ pub fn handle_co_propose(ctx: Context<CoPropose>, amount: u64) -> Result<()> {
         },
         amount,
     )?;
+    // Refund reads this to insist that the share is closed together with the commitment.
+    ctx.accounts.commitment.has_share = true;
     let proposal_fee = ctx.accounts.event.params.proposal_fee;
     pay(
         &ctx.accounts.system_program,

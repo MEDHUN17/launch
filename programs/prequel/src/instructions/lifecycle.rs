@@ -131,7 +131,7 @@ pub struct Refund<'info> {
         bump = commitment.bump
     )]
     pub commitment: Account<'info, Commitment>,
-    /// If the wallet co-proposed, its share account is closed too (pass the program id to omit it).
+    /// Required when the wallet co-proposed (its Commitment says so) and closed with it; omit otherwise.
     #[account(
         mut,
         close = wallet,
@@ -148,6 +148,11 @@ pub fn handle_refund(ctx: Context<Refund>) -> Result<()> {
     require!(
         logic::is_refundable(ctx.accounts.event.status, candidate.status),
         PrequelError::NotRefundable
+    );
+    // A co-proposer's share can only be closed through its commitment, so it must come along now.
+    require!(
+        !ctx.accounts.commitment.has_share || ctx.accounts.co_proposer_share.is_some(),
+        PrequelError::CoProposerShareRequired
     );
     // The first refund of a voided event records that the candidate is refunding.
     if candidate.status == CandidateStatus::Pending {

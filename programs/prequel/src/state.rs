@@ -2,8 +2,9 @@
 //!
 //! Layout rules from the design review: fixed-size fields come first and strings last, so a keeper can filter
 //! on status and totals with `memcmp` at fixed offsets; every long-lived account keeps a `reserved` tail, and
-//! fields that Phases 2 to 4 will need exist from day one, so no account ever has to be reallocated (Anchor
-//! rejects an existing account whose size differs from the declared space).
+//! fields that Phases 2 to 4 will need exist from day one. Growing a live account later would take a migration
+//! instruction and someone to pay the extra rent, so the layouts are sized for the whole lifecycle up front.
+//! `tests/layout.rs` pins the byte offsets that the keeper and indexer will filter on.
 
 use crate::constants::*;
 use anchor_lang::prelude::*;
@@ -202,7 +203,10 @@ pub struct Commitment {
     pub amount: u64,
     pub first_commit_ts: i64,
     pub bump: u8,
-    pub reserved: [u8; 16],
+    /// Set by `co_propose`: this wallet also has a `CoProposerShare`, which `refund` must close with the commitment
+    /// (otherwise the share's rent would be stranded, because the commitment is the only way back to it).
+    pub has_share: bool,
+    pub reserved: [u8; 15],
 }
 
 #[account]

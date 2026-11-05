@@ -51,9 +51,9 @@ fn swapping_any_account_in_commit_or_co_propose_is_refused_and_moves_no_money() 
     for (index, replacement) in substitutions {
         let mut ix = commit(&buyer.pubkey(), 0, &c_a, SOL);
         ix.accounts[index].pubkey = replacement;
-        assert!(
-            env.send(&[ix], &[&buyer]).is_err(),
-            "commit with account #{index} swapped to {replacement} must fail"
+        assert_account_rejected(
+            env.send(&[ix], &[&buyer]),
+            &format!("commit with account #{index} swapped to {replacement}"),
         );
     }
     // co_propose: wallet, config, event, candidate, vault, commitment, co_proposer_share, treasury, system_program
@@ -69,9 +69,9 @@ fn swapping_any_account_in_commit_or_co_propose_is_refused_and_moves_no_money() 
     ] {
         let mut ix = co_propose(&buyer.pubkey(), 0, &c_a, &env.treasury, SOL);
         ix.accounts[index].pubkey = replacement;
-        assert!(
-            env.send(&[ix], &[&buyer]).is_err(),
-            "co_propose with account #{index} swapped must fail"
+        assert_account_rejected(
+            env.send(&[ix], &[&buyer]),
+            &format!("co_propose with account #{index} swapped"),
         );
     }
     // propose: proposer, config, event, candidate, vault, commitment, treasury, instructions, system_program
