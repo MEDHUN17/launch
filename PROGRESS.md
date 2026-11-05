@@ -1,6 +1,6 @@
 # PROGRESS
 
-**Current phase:** 1 — Program core · **State:** scope and the four design decisions approved (2026-11-05); design note and Opus review in progress, no program code yet.
+**Current phase:** 1 — Program core · **State:** built and tested. All instructions are in, 78 tests pass in LiteSVM (22 unit, 56 integration including the invariant random walk), fmt, `anchor build` and clippy are clean. A second independent code review is being triaged. Phase 2 starts with a plan for your approval; the items under "Needs your decision" are small and none blocks it.
 **Last updated:** 2026-11-05 (session 1)
 
 Tick a box only when its criterion passes (tests green, or the artifact exists and was checked). Each phase lists SPEC §11's "Build" and "Done when" text for reference; the checkboxes are the gate. Each session ends with a log line at the bottom.
@@ -16,7 +16,18 @@ Tick a box only when its criterion passes (tests green, or the artifact exists a
 
 Approved for Phase 1: freeze each event's economic settings with hard caps (Q-11, caps in D-013); co-propose pays the proposal fee and its weight is frozen when joining (Q-14); admin `reject_candidate`, attestation covering name/ticker/URI with the beta running with attestation on, and frozen ticker table v1 with ASCII-only input (Q-13, Q-16, Q-19); atomic launch (Q-02, built in Phase 3/4).
 
-Still open, needed in later phases: Q-15 (trading delay and exit math), Q-07 (who pays birth rent), Q-17 (delay-void vs dispute), Q-18, Q-06, plus confirmation of the cap values in D-013. Kalshi's terms still need a human reader; a Pinata key is optional.
+Still open, needed in later phases: Q-15 (trading delay and exit math), Q-07 (who pays birth rent), Q-17 (delay-void vs dispute), Q-18, Q-06. Kalshi's terms still need a human reader; a Pinata key is optional.
+
+## Needs your decision
+
+Small, none blocks starting Phase 2 (details and reasons in `docs/DECISIONS.md` Q-21 and `docs/PHASE1_DESIGN.md` section 9):
+
+1. **Cap values (D-013):** `min_raise` at least 0.1 SOL, 5 minutes minimum between close and event start, 60-day window limit, `proposal_fee` at most 1 SOL, the rest as listed. Confirm or give me different numbers.
+2. **`proposal_cutoff`:** new setting, default 0 (the spec behaviour). Set per beta event to leave the admin time to reject a bad candidate before commits stop. Do you want a non-zero default?
+3. **Pause scope:** proposing and co-proposing stop under either pause flag; plain commits only under `pause_commits`.
+4. **Relisting after a void:** today a voided market can never be listed again. Allow it?
+5. **URI cap:** 128 bytes of printable ASCII (Metaplex allows 200).
+6. **New dependencies (D-016):** two Solana SDK crates in the program and eight test-only crates, all listed with versions.
 
 Interpretations, not spec changes (say if you disagree): the Phase 1 invariant 4 and 5 items are narrowed to what can be tested before `claim` and birth exist; the Phase 4 item says "or the atomic launch"; the Phase 9 item lists the Build text in brackets.
 
@@ -51,13 +62,17 @@ Carried forward into Phase 1:
 Build: Config, events, propose with Canon, co-propose, commit, close, void, refund.
 Done when: Happy and failure tests for every instruction; invariants 1, 2, 4, 5 and 8 pass.
 
-- [ ] Happy-path test for every Phase 1 instruction: `initialize_config`, `update_config`, `set_pause`, `create_event`, `propose_candidate`, `co_propose`, `commit`, `close_window`, `void_event` (admin path; the delay-void path is Phase 2), `refund`
-- [ ] Failure-path test for every Phase 1 instruction
-- [ ] Invariant 1: the sum of Commitment amounts equals the candidate's total committed
-- [ ] Invariant 2: a refunding candidate returns exactly each commit, and its vault ends at the rent-exempt minimum
-- [ ] Invariant 4: a Commitment is claimed or refunded, never both, at most once (refund side only until `claim` exists in Phase 3)
-- [ ] Invariant 5: no proposal or commit after close; a voided event only refunds (the birth clauses are re-checked in Phase 3)
-- [ ] Invariant 8: at most one candidate per (event, outcome, canon hash)
+- [x] Happy-path test for every Phase 1 instruction: `initialize_config`, `update_config`, `set_pause`, `create_event`, `propose_candidate`, `co_propose`, `commit`, `close_window`, `void_event` (admin path; the delay-void path is Phase 2), `reject_candidate`, `refund`. Evidence: `scripts/rust-checks.sh`, 78 tests green (files `config_events`, `propose_commit`, `lifecycle`)
+- [x] Failure-path test for every Phase 1 instruction: wrong signer or role, bad input, wrong window, paused, wrong status, swapped accounts; each failure also checks that nothing moved (`config_events`, `propose_commit`, `review_hardening`, `lifecycle`)
+- [x] Invariant 1: the sum of Commitment amounts equals the candidate's total committed (reworded per Q-05: open commitments + refunded total = total committed, checked after every step of the random walk)
+- [x] Invariant 2: a refunding candidate returns exactly each commit, and its vault ends at the rent-exempt minimum (plus any donations, which never block the last refund)
+- [x] Invariant 4: a Commitment is claimed or refunded, never both, at most once (refund side only until `claim` exists in Phase 3)
+- [x] Invariant 5: no proposal or commit after close; a voided event only refunds (the birth clauses are re-checked in Phase 3)
+- [x] Invariant 8: at most one candidate per (event, outcome, canon hash)
+
+Evidence for the invariants: `programs/prequel/tests/invariants.rs` (16 seeded walks of 80 steps; coverage floors; two deliberate bugs confirmed to fail it) plus the named tests in `docs/PHASE1_DESIGN.md` section 7. The invariant 6 check (pause never blocks refund) also passes: `neither_pause_flag_blocks_refund_reject_void_or_close`.
+
+Open until the code review is triaged: any defect it finds gets a test and a fix before Phase 2 starts.
 
 Invariants 1, 2 and 3 are worded in a way that donations and AMM rounding break; see Q-05 for the proposed replacements.
 
@@ -147,3 +162,4 @@ SPEC §11 doesn't assign these to a phase's "Done when". See `docs/DECISIONS.md`
 
 - 2026-11-05 — Kickoff. Read SPEC.md; saved it unchanged; created CLAUDE.md, PROGRESS.md and docs/DECISIONS.md; drafted the Phase 0 plan.
 - 2026-11-05 — Phase 0. (CI is green on GitHub; a third Opus review fact-checked this write-up and its corrections are applied.) You opened the network. Installed and pinned the toolchain; built the monorepo skeleton, Anchor stub and CI; ran the Kalshi, AMM and media spikes; two independent Opus reviews (spec and AMM) folded into DECISIONS.md. Key results: the Meteora create+lock+claim flow works by CPI from PDAs, pool squatting works without holding the coin, and the pool part of an atomic launch (mint, supply, revoke, wrap, pool, lock) takes 153k CU and 22 accounts; the full launch will likely need a v0 transaction. After the lock the owner can still `split_position` the liquidity away, so the program must never sign a split.
+- 2026-11-05 — Phase 1. You approved the four design questions (Q-02, Q-11, Q-13/16/19, Q-14). Wrote the design note, had it reviewed by an independent Opus (applied: account layouts with reserved tails, an attestation that signs a digest so a maximum proposal fits in one packet, the rent-safe program-owned vault, hard caps, many extra tests). Built the shared ticker table (Rust and TypeScript, 35 shared fixtures), the program (11 instructions), a LiteSVM harness with a real Ed25519 precompile, and the invariant random walk; checked that the walk fails when the program is deliberately broken. Docs updated: `docs/PHASE1_DESIGN.md` (as built), D-009 to D-018 and Q-21 in `docs/DECISIONS.md`.

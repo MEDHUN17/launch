@@ -6,7 +6,7 @@ Prequel is a Solana launchpad for event-conditional memecoins. Traders commit SO
 
 ## Session protocol
 
-1. Start: read CLAUDE.md, SPEC.md and PROGRESS.md. Check `docs/DECISIONS.md` for open spec questions that touch your work, and PROGRESS.md "Needs your decision" before any Phase 1 work.
+1. Start: read CLAUDE.md, SPEC.md and PROGRESS.md. Check `docs/DECISIONS.md` for open spec questions that touch your work, and PROGRESS.md "Needs your decision" before starting a phase.
 2. Continue with the next unchecked item in the current phase. Plan first, build, then run all tests before marking anything done.
 3. Work one phase at a time. Show a plan first, and wait for approval on anything expensive to reverse.
 4. End: update PROGRESS.md (tick a box only when its criterion passes; add a session-log line) and `docs/DECISIONS.md` (one entry per decision). Commit and push to the session's working branch.
@@ -70,8 +70,10 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 | Install JS deps | `pnpm install` | verified |
 | JS lint, typecheck, test, web build (28 tasks) | `pnpm turbo run lint typecheck test build` | verified |
 | Lint the scripts folder | `pnpm lint:scripts` | verified |
-| Program: fmt, `anchor build`, clippy, LiteSVM tests | `scripts/rust-checks.sh` | verified |
-| Build the program only | `anchor build` | verified |
+| Program: fmt, `anchor build`, clippy, LiteSVM tests (78: 22 unit, 56 integration) | `scripts/rust-checks.sh` | verified |
+| One test file, or the invariant walk with its coverage table | `cargo test -p prequel --test invariants -- --nocapture` (any `--test <file>` works) | verified |
+| Unit tests only (logic, canon, attestation) | `cargo test -p prequel --lib` | verified |
+| Build the program only. **The LiteSVM tests embed `target/deploy/prequel.so`: run this after every program change, or the tests run the old binary.** | `anchor build` | verified |
 | Kalshi spike (live, read-only) | `NODE_USE_ENV_PROXY=1 pnpm spike:kalshi` | verified |
 | Media spike (dry run without `PINATA_JWT`) | `pnpm spike:media` | verified |
 | AMM spike (devnet fixtures, build, LiteSVM tests) | `pnpm spike:amm` | verified |
@@ -98,6 +100,8 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 - Permissionless instructions are idempotent. Privileged instructions name their role (admin, resolver, canonicalizer).
 - Admin, upgrade authority and treasury are a Squads multisig on devnet (Phase 10).
 - Every invariant in SPEC §5 gets a test (rewording proposed in Q-05, not yet approved).
+- Built in Phase 1 and tested (do not regress): every time check goes through the effective event status (a stored `Open` at or after `window_close` is `Closed`); the vault is a program-owned data account and `refund` debits it directly, so a donation can never strand the last refund (D-010); candidate and vault accounts never close in Phase 1; `reject_candidate` works only before close; `propose_candidate` and `co_propose` recompute or enforce everything themselves (canon hash, slate cap, attestation digest) and take nothing from the caller on trust.
+- Any change to money, time or status logic must keep `programs/prequel/tests/invariants.rs` green. Never lower its coverage floors to make it pass; if a floor fails, the walk stopped exercising something.
 
 ## Environment notes (cloud sandbox)
 
