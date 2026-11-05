@@ -88,6 +88,8 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 - **The coin's mint must not exist before the pool is created in the same transaction**, or a third party can create the pool first without holding the coin (verified, Q-02).
 - Keep money totals in state (`total_committed` and similar). Never infer them from vault lamports: anyone can send lamports to a PDA.
 - Payers for AMM rent must be data-less, system-owned PDAs (D-010).
+- Every program-created PDA (mint, token accounts, vault) needs a creation path that tolerates pre-funding (`CreateAccountAllowPrefund` or top-up + allocate + assign); plain `create_account` fails if an attacker sends lamports first (verified).
+- The position-owner PDA must never sign anything generic: after the lock `split_position` can still move the locked liquidity into another position (verified), and so could an NFT transfer. Sign only the exact fee-claim CPI.
 - Close accounts safely and block revival.
 - Time checks use the Clock sysvar through one effective-status function. Test the exact boundary seconds (T-1, T, T+1).
 - Pause never blocks `claim`, `refund` or `claim_creator_fees`.

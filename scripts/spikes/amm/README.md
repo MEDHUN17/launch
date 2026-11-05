@@ -14,6 +14,9 @@ What it runs, inside LiteSVM against the real devnet DAMM v2 binary and public c
 - `squatting_probe_one_sided_pool_without_holding_the_coin`: a third party who holds none of the coin creates the
   pool first, so the program's own creation fails (Q-02).
 - `no_instruction_can_unlock_a_permanently_locked_position`: none of the 39 IDL instructions unlocks.
+- `tests/probe2.rs` (6 tests, written by an Opus agent and reproduced here): the **atomic launch** (create the coin's mint PDA, mint, revoke authority, wrap SOL, create the pool, lock, all in one PDA-signed instruction: 153k CU, 22 accounts, 820 bytes), **pre-funded addresses** (our own PDAs need a pre-fund-tolerant creation path), what the owner PDA can still do **after the lock** (withdrawals fail, `split_position` succeeds), and the 5/50/500 SOL sizes.
+
+**Warning:** `owner_cpi` in the spike program is an unsafe generic forwarder that signs as the position owner. It exists only to test what the owner PDA could do. Never copy it.
 
 Provenance of `idls/cp_amm.json`: `npm pack @meteora-ag/cp-amm-sdk@1.5.1`, then
 `python3 -I extract-idl.py pkg/package/dist/index.js idls/cp_amm.json`

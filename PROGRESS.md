@@ -16,7 +16,7 @@ Tick a box only when its criterion passes (tests green, or the artifact exists a
 
 These come from my own review and from two independent Opus reviews (details in `docs/DECISIONS.md` section B). Phase 1 fixes account layouts, so they are cheap now and expensive later.
 
-1. **Q-02 Atomic launch (critical).** Verified on localnet: someone holding none of the coin can create the (coin, wSOL) pool on Meteora's 1% config first, which would strand about 99% of a raise. Proposal: mint, wrap, create pool, lock, revoke authority and mark Born in one instruction, plus a birth deadline that turns an unlaunched winner into a refund. This amends §5.
+1. **Q-02 Atomic launch (critical).** Verified on localnet: someone holding none of the coin can create the (coin, wSOL) pool on Meteora's 1% config first, which would strand about 99% of a raise. Proposal: mint, wrap, create pool, lock, revoke authority and mark Born in one instruction, plus a birth deadline that turns an unlaunched winner into a refund. This amends §5. Measured: that whole launch fits one legacy transaction (153k CU, 22 accounts, 820 bytes), before Metaplex metadata, which adds about 3 accounts and needs a short URI or a v0 transaction.
 2. **Q-11 Snapshot and bound parameters per event** so the admin cannot change fees, delays or bonds on a live event.
 3. **Q-14 Co-proposer economics** (`co_propose` currently beats `commit` for free).
 4. **Q-13, Q-16, Q-19 Slate and Canon policy** (slot grabbing, attestation scope, confusables table versioning).
@@ -145,4 +145,4 @@ SPEC §11 doesn't assign these to a phase's "Done when". See `docs/DECISIONS.md`
 ## Session log
 
 - 2026-11-05 — Kickoff. Read SPEC.md; saved it unchanged; created CLAUDE.md, PROGRESS.md and docs/DECISIONS.md; drafted the Phase 0 plan.
-- 2026-11-05 — Phase 0. You opened the network. Installed and pinned the toolchain; built the monorepo skeleton, Anchor stub and CI; ran the Kalshi, AMM and media spikes; two independent Opus reviews (spec and AMM) folded into DECISIONS.md. Key results: the Meteora create+lock+claim flow works by CPI from PDAs (122k CU), and pool squatting works without holding the coin, so the launch must be atomic.
+- 2026-11-05 — Phase 0. You opened the network. Installed and pinned the toolchain; built the monorepo skeleton, Anchor stub and CI; ran the Kalshi, AMM and media spikes; two independent Opus reviews (spec and AMM) folded into DECISIONS.md. Key results: the Meteora create+lock+claim flow works by CPI from PDAs, pool squatting works without holding the coin, and the fully atomic launch (mint, supply, revoke, wrap, pool, lock) fits one transaction at 153k CU. After the lock the owner can still `split_position` the liquidity away, so the program must never sign a split.
