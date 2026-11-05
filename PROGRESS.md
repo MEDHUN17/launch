@@ -8,7 +8,7 @@ Tick a box only when its criterion passes (tests green, or the artifact exists a
 
 ## Blockers
 
-- [ ] **Network policy denies hosts Phase 0 needs** (checked 2026-11-05). Package registries work (crates.io, npm, PyPI). Denied: `release.anza.xyz`, `api.devnet.solana.com`, `www.anchor-lang.com`, `solana.com`, `docs.meteora.ag`, `docs.raydium.io`, `developers.metaplex.com`, `docs.kalshi.com`, `api.elections.kalshi.com`, `demo-api.kalshi.co`, `docs.pinata.cloud`, `api.pinata.cloud`, `docs.squads.so`, `pubapi.dflow.net`. The user must widen the environment's Network access (cloud environment menu in the session title bar, then Edit, then Network access). Blocks tasks 0.1 and 0.4–0.7. Does not block 0.2 and 0.3.
+- [ ] **Network policy denies hosts Phase 0 needs** (checked 2026-11-05). Package registries work (crates.io, npm, PyPI). Denied: `release.anza.xyz`, `api.devnet.solana.com`, `www.anchor-lang.com`, `solana.com`, `docs.meteora.ag`, `docs.raydium.io`, `developers.metaplex.com`, `docs.kalshi.com`, `api.elections.kalshi.com`, `demo-api.kalshi.co`, `docs.pinata.cloud`, `api.pinata.cloud`, `docs.squads.so`, `pubapi.dflow.net`. The user must widen the environment's Network access (cloud environment menu in the session title bar, then Edit, then Network access). Blocks tasks 0.1 and 0.4–0.7, and the Anchor stub in 0.2 (it needs 0.1). The JS side of 0.2 and the CI config in 0.3 can proceed.
 - [ ] **Toolchain missing in the sandbox:** Solana/Agave CLI, Anchor CLI, `solana-verify`. Present: Rust 1.97.0, Node 22.23.4, pnpm 10.28.0. No Docker daemon. Covered by task 0.1.
 
 ## Phase 0 — Setup and spikes
@@ -23,7 +23,7 @@ Proposed task breakdown (awaiting approval):
 
 - [x] CLAUDE.md, PROGRESS.md, docs/DECISIONS.md created (kickoff)
 - [ ] 0.1 Bootstrap the toolchain with an idempotent `scripts/bootstrap.sh`: Agave/Solana CLI and platform tools, Anchor CLI, `solana-verify`. Read compatibility notes, then pin versions (D-001). *Needs network.*
-- [ ] 0.2 Monorepo skeleton per SPEC §4: pnpm workspaces and Turborepo, package stubs, `.gitignore` (keypairs, `.env`, build output), `.env.example`, `rust-toolchain.toml`, `.nvmrc`, plus a compile-only Anchor program stub to prove the toolchain. Replace the "planned" commands in CLAUDE.md with verified ones.
+- [ ] 0.2 Monorepo skeleton per SPEC §4: pnpm workspaces and Turborepo, package stubs, `.gitignore` (keypairs, `.env`, build output), `.env.example`, `rust-toolchain.toml`, `.nvmrc`, plus a compile-only Anchor program stub to prove the toolchain (the stub needs 0.1). Replace the "planned" commands in CLAUDE.md with verified ones.
 - [ ] 0.3 CI skeleton (GitHub Actions): clippy, eslint, typecheck, unit tests, web build on every push.
 - [ ] 0.4 Spike A, AMM: Meteora DAMM v2 and Raydium CPMM on localnet. Create the pool at the clearing price by CPI from a PDA, lock the LP permanently, claim fees by CPI. Log D-002 and the inputs to Q-01 and Q-02. *Needs network.*
 - [ ] 0.5 Spike B, Kalshi: read docs and API terms, list open markets, read a settled market, hash the response as evidence, save fixtures. Log D-003. *Needs network.*
