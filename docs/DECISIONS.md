@@ -22,7 +22,10 @@ One entry per decision. A version or doc link goes in only after it was read fro
 | D-010 | Vault and payer account model | 1 | Pending |
 | D-011 | Dust rule | 3 | Pending |
 | D-012 | RPC and webhook provider | 5 | Pending |
-| Q-01 to Q-20 | Spec questions | various | Open, section B |
+| D-013 | Phase 1 parameter caps | 1 | Proposed values, confirm |
+| D-014 | Attestation message v1 | 1 | Decided with Q-16 |
+| D-015 | Ticker canon v1 | 1 | Decided with Q-19 |
+| Q-01 to Q-20 | Spec questions | various | Q-02, Q-11, Q-13, Q-14, Q-16, Q-19 decided 2026-11-05; the rest open, section B |
 
 ## A. Decisions
 
@@ -51,7 +54,7 @@ One entry per decision. A version or doc link goes in only after it was read fro
 
 ### D-002 · AMM: Meteora DAMM v2 vs Raydium CPMM
 
-- **Phase 0 · Status: Provisional.** Chosen: **Meteora DAMM v2, public config 11, launched atomically.** The atomic launch now works on localnet (below). Still needed: (1) the user's approval of the atomic-launch amendment (Q-02), (2) a check of Meteora's mainnet upgrade authority **[U]**, (3) Metaplex metadata inside the same transaction (sized below, not run).
+- **Phase 0 · Status: Provisional; the atomic launch was approved on 2026-11-05 (Q-02).** Chosen: **Meteora DAMM v2, public config 11, launched atomically.** The atomic launch now works on localnet (below). Still needed: (1) the user's approval of the atomic-launch amendment (Q-02), (2) a check of Meteora's mainnet upgrade authority **[U]**, (3) Metaplex metadata inside the same transaction (sized below, not run).
 - **What I verified myself [V-me], on devnet and in LiteSVM with the real devnet binary** (`scripts/spikes/amm`, `pnpm spike:amm`, 9 tests pass: 8 in LiteSVM, 1 IDL check; output in `scripts/spikes/amm/test-output.log`):
   - Program `cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG` is deployed on devnet (1,559,448 bytes, sha256 `82bb9375…1ec2`, hash-pinned in `fetch-fixtures.sh`).
   - Config 11 `AeLtDKgw3XnXbr3Kgfbcb7KiZULVCQ5mXaFDiG9n7EgW`, decoded: flat 1.00% fee (cliff_fee_numerator 10,000,000 of 1e9), no dynamic fee, protocol cut 20%, `collect_fee_mode = 1` (token B only), full price range, `pool_creator_authority` empty (public).
@@ -128,7 +131,10 @@ One entry per decision. A version or doc link goes in only after it was read fro
 
 ### D-010 · Vault and payer account model
 
-- **Pending (Phase 1).** The AMM spike shows the pattern that works: system-owned PDAs with no data (`seeder`) pay AMM rent and own the deposit accounts, because System Program transfers need a data-less payer. Lean towards the per-candidate vault being a system-owned PDA for the same reason. Accounting must come from `Candidate` state, never vault lamports. Every program-created PDA (mint, token accounts, vault) must use a creation path that tolerates pre-funding (`CreateAccountAllowPrefund` or top-up + allocate + assign): a plain `create_account` fails if an attacker sends it lamports first (verified). Invariants 1 and 2 need rewording (Q-05).
+- **Phase 1 · Decided 2026-11-05 (implementation decision, flagged for review).** The per-candidate **vault is a program-owned data account** (`Vault { candidate, bump }`); the **AMM payer (`seeder`) is a separate data-less, system-owned PDA** (Phase 3/4).
+- **Why not a system-owned vault:** under Solana's rent rule a system account can only be left at 0 lamports or at least 890,880. A donation of even 1 lamport to a system-owned vault makes the last refund fail (it would leave 1 lamport), so an attacker could block the final committer. A program-owned vault only gains a harmless surplus, refunds just debit the committed amount, and invariant 2's wording ("vault ends at the rent-exempt minimum") stays true.
+- **Why the seeder stays system-owned:** AMM rent is paid through System Program transfers, which need a data-less payer (verified in the AMM spike). At launch the program moves the pool SOL from the vault to the seeder by direct lamport arithmetic, which is allowed because the program owns the vault.
+- **Rules:** accounting comes from `Candidate` state, never vault lamports; every program-created PDA must tolerate pre-funding (Anchor 1.2.2 `init` does; tested); invariants 1 and 2 get the reworded versions in Q-05 as extra tests.
 
 ### D-011 · Dust rule
 
@@ -138,6 +144,22 @@ One entry per decision. A version or doc link goes in only after it was read fro
 
 - **Pending (Phase 5).** Helius or similar; keys in env only.
 
+### D-013 · Phase 1 parameter caps (Q-11)
+
+- **Phase 1 · Proposed values, mine; please confirm or change.** Config and `create_event` reject values outside these constants; `create_event` copies the validated values into the event.
+- `success_fee_bps` at most 500 (5%). Fee split must sum to 10,000.
+- `dispute_window` 60 seconds to 7 days. `max_resolution_delay` 1 day to 30 days. `launch_window` (time allowed to launch a winner before it refunds) 10 minutes to 7 days, default 24 hours.
+- `dispute_bond` 0.01 to 10 SOL. `proposal_fee` at most 1 SOL. `min_commit` at least 0.001 SOL. `min_raise` at least `min_commit` and at most 1,000 SOL. `max_candidates_per_outcome` 1 to 32.
+- Event times: `now < window_close < event_start`, `expected_resolution` between `event_start` and `event_start` + 90 days.
+
+### D-014 · Attestation message v1 (Q-16)
+
+- **Phase 1 · Decided with Q-16.** The canonicalizer signs these bytes: `"PREQUEL-PROPOSE-V1"` (18 ASCII bytes) || program id || config || event || outcome (1) || canon hash (32) || sha256(name || 0x00 || ticker || 0x00 || uri) || image hash (32) || proposer || expiry (i64 LE). The program requires the previous instruction to be an Ed25519 precompile call with exactly one signature, all three instruction-index fields = u16::MAX, public key = the configured canonicalizer, message = the expected bytes, and expiry not yet passed. `require_attestation` is snapshotted per event.
+
+### D-015 · Ticker canon v1 (Q-19)
+
+- **Phase 1 · Decided with Q-19.** Input must be 2 to 10 ASCII letters or digits (anything else, including non-ASCII, is rejected before any case mapping). Uppercase, then map 0→O, 1→I, 5→S, then `sha256` of those bytes is the canon hash (the PDA seed). The displayed ticker keeps the uppercased input without the confusable mapping. The mapping lives in one plain-text file read by the program's `build.rs` and by the TypeScript library; a shared fixture test keeps both hashes equal. `canon_version = 1` is stored on each event.
+
 ## B. Spec questions
 
 Each is a gap or risk in SPEC.md. Proposals are suggestions only. "Rev" marks findings from the independent Opus spec review.
@@ -145,8 +167,11 @@ Each is a gap or risk in SPEC.md. Proposals are suggestions only. "Rev" marks fi
 ### B1. Resolve before Phase 1 code
 
 1. **Q-02 Atomic launch (critical).** Verified squatting plus the "Born but never seeded" trap.
+**Decision (2026-11-05, you): atomic launch.** One transaction mints the coin, creates the Meteora pool, locks it and marks the candidate Born; a winner not launched by a deadline refunds. Replaces SPEC's separate `birth_candidate` and `seed_pool` (built in Phase 3/4). Phase 1 reserves the deadline fields.
 2. **Q-11 Snapshot and bound parameters per event.**
+**Decision (2026-11-05, you): freeze per event + hard caps.** `create_event` copies every economic setting into the event; `update_config` affects future events only; code constants bound the values (D-013).
 3. **Q-14 Co-proposer economics.**
+**Decision (2026-11-05, you): co-propose pays the fee.** `co_propose` pays the same non-refundable proposal fee; a co-proposer's weight is frozen at the amount committed when joining; the 20% slice stays.
 4. **Q-13, Q-16, Q-19 Slate, attestation and Canon policy.**
 5. **D-010 and Q-05 Vault model and rewritten invariants.**
 
@@ -189,6 +214,7 @@ The proposal fee is non-refundable. Also disclose the winning-side reality (Q-15
 A caller could pick a hostile AMM config (99% fee, delayed activation) or become the pool creator. Proposal: pin the AMM program, config, fee-collection mode, activation rule and price range; build every CPI argument in-program; afterwards assert that our PDA holds the position NFT. The spike's `seed` trusts its caller and must not be copied. After the lock the owner PDA could still `split_position` the locked liquidity into someone else's position (verified), so the program must never sign a split, expose a generic owner-signed call, or transfer the position NFT.
 
 **Q-13 First-come slate grab; no way to free a slot** · high · Rev (H-3)
+**Decision (2026-11-05, you): adopted.** Admin `reject_candidate` before close (100% refund, slot freed, proposal fee kept), the beta runs with `require_attestation` on.
 Bots can fill all 12 slots per outcome for ~0.48 SOL of fees. Hidden candidates keep their slots and offensive metadata is permanent at birth. Proposal: an admin `reject_candidate` before close (100% refund, slot freed, fee kept), `require_attestation` on for the beta with per-wallet quotas, and a higher proposal fee.
 
 **Q-14 `co_propose` always beats `commit`** · high · Rev (H-4)
@@ -198,6 +224,7 @@ Any committer can call `co_propose` (≥ 0.05 SOL, no fee) and share the 20% sli
 With a 100 SOL raise the pool gets ~98.95 SOL, committers ~502.6M tokens; if all sell, they recover about half (~49.5 SOL stays locked). The spike shows a 1 SOL buy into a 4.95 SOL pool already averaging 21% above the clearing price. Whoever cranks the seed can bundle a claim and a sale. Proposal: delay trading by a fixed interval after launch (DAMM v2 activation point), show the exit math in the commit UI, and decide anti-sniper fee schedules explicitly. Economics and copy change.
 
 **Q-16 Attestation scope** · medium · Rev (M-1)
+**Decision (2026-11-05, you): adopted.** The attestation signs a domain tag, program id, config, event, outcome, canon hash, a hash of name+ticker+URI, image hash, proposer and expiry (D-014).
 The signed message omits name, display ticker and metadata URI, and has no domain tag. Sign: domain tag, program id, config, event, outcome, canon hash, sha256(name + ticker + URI), image hash, proposer, expiry. When reading the Ed25519 instruction require exactly one signature and all three instruction-index fields = u16::MAX.
 
 **Q-17 Delay void can race a dispute; bond fate undefined** · medium · Rev (M-2)
@@ -207,6 +234,7 @@ Allow the delay void of a Disputed event only after `disputed_at` + a settle win
 Track `claimed_lamports`; sweepable tokens = balance − ceil(unclaimed × committer_tokens / total); fix the destination; no grace period needed.
 
 **Q-19 Canon table gaps and versioning** · low · Rev (L-1)
+**Decision (2026-11-05, you): adopted.** Frozen table v1 (the spec's 0→O, 1→I, 5→S only), ASCII-only input, `canon_version` stored on the event (D-015).
 0/1/5 are mapped but 2/Z, 8/B, 6/G are not; changing the table later remaps candidate addresses. TypeScript `toUpperCase` is Unicode-aware ("ß" → "SS"). Freeze version 1, store `canon_version`, reject non-ASCII before uppercasing in both languages.
 
 **Q-20 Rent lifetimes and wallet caps** · low · Rev (L-2, L-3)

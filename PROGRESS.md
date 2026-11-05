@@ -1,6 +1,6 @@
 # PROGRESS
 
-**Current phase:** 0 — Setup and spikes · **State:** Phase 0 work is done and pushed; the spec questions in `docs/DECISIONS.md` section B need your answers before Phase 1 code.
+**Current phase:** 1 — Program core · **State:** scope and the four design decisions approved (2026-11-05); design note and Opus review in progress, no program code yet.
 **Last updated:** 2026-11-05 (session 1)
 
 Tick a box only when its criterion passes (tests green, or the artifact exists and was checked). Each phase lists SPEC §11's "Build" and "Done when" text for reference; the checkboxes are the gate. Each session ends with a log line at the bottom.
@@ -12,18 +12,13 @@ Tick a box only when its criterion passes (tests green, or the artifact exists a
 - [ ] **Pinata API key** for an upload test (optional, D-005).
 - [x] **First green remote CI run** — run 41987267156 passed both jobs (the first run failed on a Rust-version mismatch, since fixed). Action versions are still unverified and GitHub warns about Node 20 actions (D-001).
 
-## Needs your decision before Phase 1 code
+## Decisions (answered 2026-11-05)
 
-These come from my own review and from two independent Opus reviews (details in `docs/DECISIONS.md` section B). Phase 1 fixes account layouts, so they are cheap now and expensive later.
+Approved for Phase 1: freeze each event's economic settings with hard caps (Q-11, caps in D-013); co-propose pays the proposal fee and its weight is frozen when joining (Q-14); admin `reject_candidate`, attestation covering name/ticker/URI with the beta running with attestation on, and frozen ticker table v1 with ASCII-only input (Q-13, Q-16, Q-19); atomic launch (Q-02, built in Phase 3/4).
 
-1. **Q-02 Atomic launch (critical).** Verified on localnet: someone holding none of the coin can create the (coin, wSOL) pool on Meteora's 1% config first, which would strand about 99% of a raise. Proposal: mint, wrap, create pool, lock, revoke authority and mark Born in one instruction, plus a birth deadline that turns an unlaunched winner into a refund. This amends §5. Measured (a lower bound, pool part only): 153k CU, 22 accounts, 820 bytes in a legacy transaction. The real launch adds the program's own accounts and Metaplex metadata, so plan for a v0 transaction with a lookup table.
-2. **Q-11 Snapshot and bound parameters per event** so the admin cannot change fees, delays or bonds on a live event.
-3. **Q-14 Co-proposer economics** (`co_propose` currently beats `commit` for free).
-4. **Q-13, Q-16, Q-19 Slate and Canon policy** (slot grabbing, attestation scope, confusables table versioning).
-5. **D-010 / Q-05 Vault model and rewritten invariants.**
-6. Also answer: D-002 (Meteora, provisional), Q-15 (delay trading after launch; exit math), Q-07 (who pays birth rent).
+Still open, needed in later phases: Q-15 (trading delay and exit math), Q-07 (who pays birth rent), Q-17 (delay-void vs dispute), Q-18, Q-06, plus confirmation of the cap values in D-013. Kalshi's terms still need a human reader; a Pinata key is optional.
 
-Interpretations, not spec changes (say if you disagree): the Phase 1 invariant 4 and 5 items are narrowed to what can be tested before `claim` and birth exist; the Phase 4 item says "or the atomic launch" pending Q-02; the Phase 9 item lists the Build text in brackets.
+Interpretations, not spec changes (say if you disagree): the Phase 1 invariant 4 and 5 items are narrowed to what can be tested before `claim` and birth exist; the Phase 4 item says "or the atomic launch"; the Phase 9 item lists the Build text in brackets.
 
 ## Phase 0 — Setup and spikes
 
