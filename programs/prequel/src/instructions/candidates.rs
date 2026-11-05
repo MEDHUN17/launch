@@ -250,17 +250,27 @@ pub struct Commit<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Who is depositing where: keys and the commitment's bump, kept together so `deposit` stays readable.
+struct Depositor {
+    candidate_key: Pubkey,
+    wallet_key: Pubkey,
+    commitment_bump: u8,
+}
+
 /// Adds `amount` to the wallet's commitment, creating it on the first commit. Returns the wallet's new total.
 fn deposit(
     now: i64,
     event: &EventState,
     candidate: &mut Candidate,
     commitment: &mut Commitment,
-    candidate_key: Pubkey,
-    wallet_key: Pubkey,
-    commitment_bump: u8,
+    who: Depositor,
     amount: u64,
 ) -> Result<u64> {
+    let Depositor {
+        candidate_key,
+        wallet_key,
+        commitment_bump,
+    } = who;
     logic::check_accepts_commits(event.status, event.window_open, event.window_close, now)?;
     require!(
         candidate.status == CandidateStatus::Pending,
@@ -312,9 +322,11 @@ pub fn handle_commit(ctx: Context<Commit>, amount: u64) -> Result<()> {
         &ctx.accounts.event,
         &mut ctx.accounts.candidate,
         &mut ctx.accounts.commitment,
-        candidate_key,
-        wallet_key,
-        ctx.bumps.commitment,
+        Depositor {
+            candidate_key,
+            wallet_key,
+            commitment_bump: ctx.bumps.commitment,
+        },
         amount,
     )?;
     pay(
@@ -401,9 +413,11 @@ pub fn handle_co_propose(ctx: Context<CoPropose>, amount: u64) -> Result<()> {
         &ctx.accounts.event,
         &mut ctx.accounts.candidate,
         &mut ctx.accounts.commitment,
-        candidate_key,
-        wallet_key,
-        ctx.bumps.commitment,
+        Depositor {
+            candidate_key,
+            wallet_key,
+            commitment_bump: ctx.bumps.commitment,
+        },
         amount,
     )?;
     let proposal_fee = ctx.accounts.event.params.proposal_fee;
