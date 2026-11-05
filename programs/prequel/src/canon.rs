@@ -59,14 +59,25 @@ mod tests {
     fn matches_the_shared_fixtures() {
         let fixtures = include_str!("../../../packages/shared/canon/fixtures.tsv");
         let mut checked = 0;
-        for line in fixtures.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+        for line in fixtures
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+        {
             let cols: Vec<&str> = line.split('\t').collect();
             assert_eq!(cols.len(), 3, "bad fixture line: {line:?}");
             let (input, expected, expected_hash) = (cols[0], cols[1], cols[2]);
             match canonical_ticker(input) {
                 Ok(canon) => {
-                    assert_eq!(String::from_utf8(canon).unwrap(), expected, "canonical form of {input:?}");
-                    assert_eq!(hex(&canonical_ticker_hash(input).unwrap()), expected_hash, "hash of {input:?}");
+                    assert_eq!(
+                        String::from_utf8(canon).unwrap(),
+                        expected,
+                        "canonical form of {input:?}"
+                    );
+                    assert_eq!(
+                        hex(&canonical_ticker_hash(input).unwrap()),
+                        expected_hash,
+                        "hash of {input:?}"
+                    );
                 }
                 Err(_) => assert_eq!(expected, "ERR", "{input:?} should be accepted"),
             }
@@ -84,7 +95,10 @@ mod tests {
     #[test]
     fn display_keeps_digits_and_rejects_non_ascii_before_case_mapping() {
         assert_eq!(display_ticker("b0b").unwrap(), b"B0B");
-        assert_eq!(display_ticker("\u{00df}\u{00df}"), Err(CanonError::BadCharacter));
+        assert_eq!(
+            display_ticker("\u{00df}\u{00df}"),
+            Err(CanonError::BadCharacter)
+        );
         assert_eq!(display_ticker("a"), Err(CanonError::BadLength));
         assert_eq!(display_ticker("ABCDEFGHIJK"), Err(CanonError::BadLength));
     }

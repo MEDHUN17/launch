@@ -1,21 +1,47 @@
-//! Prequel program. Phase 0 stub: it exists only to prove the toolchain, IDL generation and the
-//! LiteSVM test pipeline. `ping` is deleted when Phase 1 adds the real instructions (SPEC §5).
+//! Prequel: a Solana launchpad for event-conditional memecoins (SPEC.md). Phase 1: program core.
 
 pub mod canon;
+pub mod constants;
+pub mod error;
+pub mod events;
 pub mod instructions;
+pub mod logic;
+pub mod state;
 
 use anchor_lang::prelude::*;
 
+pub use constants::*;
+pub use error::*;
 pub use instructions::*;
+pub use state::*;
 
+// Placeholder until the real program keypair is generated for the devnet beta (Phase 10); never committed.
 declare_id!("FA6eApbY1Qqghuxo9gpRE8tpGWgsajQ6cWkotaKTrwEQ");
 
 #[program]
 pub mod prequel {
     use super::*;
 
-    /// Toolchain probe: logs and succeeds.
-    pub fn ping(ctx: Context<Ping>) -> Result<()> {
-        crate::instructions::ping::handle_ping(ctx)
+    pub fn initialize_config(
+        ctx: Context<InitializeConfig>,
+        args: InitializeConfigArgs,
+    ) -> Result<()> {
+        instructions::config::handle_initialize_config(ctx, args)
+    }
+
+    pub fn update_config(ctx: Context<UpdateConfig>, args: UpdateConfigArgs) -> Result<()> {
+        instructions::config::handle_update_config(ctx, args)
+    }
+
+    pub fn set_pause(
+        ctx: Context<SetPause>,
+        pause_proposals: Option<bool>,
+        pause_commits: Option<bool>,
+    ) -> Result<()> {
+        instructions::config::handle_set_pause(ctx, pause_proposals, pause_commits)
+    }
+
+    pub fn create_event(ctx: Context<CreateEvent>, args: CreateEventArgs) -> Result<()> {
+        instructions::events::handle_create_event(ctx, args)
     }
 }

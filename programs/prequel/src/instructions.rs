@@ -1,3 +1,5 @@
-pub mod ping;
+pub mod config;
+pub mod events;
 
-pub use ping::*;
+pub use config::*;
+pub use events::*;

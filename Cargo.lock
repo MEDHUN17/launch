@@ -1920,6 +1920,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "litesvm",
+ "solana-account",
  "solana-instructions-sysvar 3.0.1",
  "solana-keypair",
  "solana-message",
