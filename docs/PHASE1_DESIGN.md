@@ -4,7 +4,7 @@ Status: as built, 2026-11-05. First written as a plan, then revised after an ind
 
 Scope: `initialize_config`, `update_config`, `set_pause`, `create_event`, `propose_candidate`, `co_propose`, `commit`, `close_window`, `void_event` (admin), `reject_candidate` (admin), `refund`. Decisions behind it: D-010, D-013, D-014, D-015 and Q-02, Q-04, Q-05, Q-11, Q-13, Q-14, Q-16, Q-19.
 
-Out of scope here: resolution (Phase 2), birth, claims and the permissionless delay-void (Phases 2 to 4). Fields those phases need exist now (reserved), so no account is ever reallocated. Anchor refuses an existing account whose size differs from the declared space, so a layout change after deploy would need a migration instruction.
+Out of scope here: resolution (Phase 2), birth, claims and the permissionless delay-void (Phases 2 to 4). Fields those phases need exist now (reserved), so no account is ever reallocated. Growing a live account later would take a migration instruction and someone to pay the extra rent; `tests/layout.rs` pins every size and the byte offsets the indexer will use.
 
 **Known Phase 1 limit.** The only ways out for a committer are an admin `void_event` or `reject_candidate`. The permissionless void after `max_resolution_delay` (SPEC §5 status machines) arrives in Phase 2. Until then an inactive admin would leave funds in the vaults of a closed event. This is a stage of the build, not a design choice.
 
@@ -13,7 +13,7 @@ Out of scope here: resolution (Phase 2), birth, claims and the permissionless de
 ```
 SEEDS        config | event+u64le(id) | ext+sha256(external_id) | candidate+event+outcome(1)+canon_hash
              | vault+candidate | commit+candidate+wallet | coprop+candidate+wallet
-SIZES        outcomes 2..=8 · name <= 32 bytes · ticker 2..=10 ASCII · uri 1..=128 printable ASCII, no spaces
+SIZES        outcomes 2..=8 · name <= 32 bytes · ticker 2..=10 ASCII · uri 1..=128 printable ASCII, no spaces, starting ipfs:// or https://
              external_id 1..=64 bytes · CANON_VERSION 1
 ATTESTATION  domain b"PREQUEL-PROPOSE-V1", message 251 bytes, signed as its sha256 digest (section 5)
 ```
@@ -63,7 +63,7 @@ Candidate       [candidate, event, outcome, canon_hash]
                 success_fee, pool_sol, launch_cost, sol_dust: u64 · reserved [u8;128]
                 name: String(32) · ticker: String(10, uppercased as typed) · uri: String(128)   (last)
 Vault           [vault, candidate]  candidate: Pubkey · bump · reserved [u8;16]
-Commitment      [commit, candidate, wallet]  candidate, wallet: Pubkey · amount: u64 · first_commit_ts: i64 · bump · reserved [u8;16]
+Commitment      [commit, candidate, wallet]  candidate, wallet: Pubkey · amount: u64 · first_commit_ts: i64 · bump · has_share: bool · reserved [u8;15]
 CoProposerShare [coprop, candidate, wallet]  candidate, wallet: Pubkey · weight: u64 · claimed: u64 · reward_debt: u128
                 joined_at: i64 · bump · reserved [u8;16]
 
@@ -80,12 +80,12 @@ How the money sits: the Vault is a **program-owned data account** (D-010). It ho
 - `check_accepts_proposals`: the same, and when `proposal_cutoff > 0` also `now < window_close - proposal_cutoff`.
 - `check_commit_amount(params, existing, add)`: `add >= min_commit`, checked add, and the per-wallet running total within `max_commit_per_wallet` (0 means no cap).
 - `is_refundable(event, candidate)`: `Rejected` and `Refunding` always; `Pending` only once the event is `Voided`; `Born` never. (Phases 2 and 3 add the losing-side and below-`min_raise` cases.)
-- `validate_params`, `validate_event_times`, `validate_outcome_count`, `validate_name`, `validate_uri`, `validate_external_id`: section 1.
+- `validate_params` (section 1, and `reserved` must be all zero), `validate_event_times`, `validate_outcome_count`, `validate_external_id`, `validate_name` (non-empty, at most 32 bytes, no control characters and no Unicode format characters such as zero-width spaces and bidi overrides) and `validate_uri` (printable ASCII, at most 128 bytes, `ipfs://` or `https://` followed by something).
 - `canon::{display_ticker, canonical_ticker, canonical_ticker_hash}` (section 6) and `attestation::{content_hash, expected_message, signed_digest, parse_ed25519, verify}` (section 5).
 
 ## 4. Instructions
 
-Common rules: privileged instructions name their role in a `has_one` constraint; permissionless ones either do their job once or fail with a named error. Money moves with checked math only. There is no `remaining_accounts` anywhere. Every program-created PDA tolerates pre-funding (Anchor's `init` falls back to transfer, allocate, assign); a test pre-funds each address the program creates.
+Common rules: privileged instructions name their role in a `has_one` constraint; permissionless ones either do their job once or fail with a named error. Money moves with checked math only. There is no `remaining_accounts` anywhere. Every program-created PDA tolerates pre-funding: when an address already holds lamports, Anchor 1.2.2 issues the System Program's `CreateAccountAllowPrefund` instruction (SIMD-0312) instead of `CreateAccount`, and `pre_funding_every_address_the_program_creates_does_not_block_it` pre-funds each address the program creates. That feature is active on localnet (Agave 4.3.2 test validator, from epoch 0) and on devnet (since epoch 1052), checked 2026-11-05. On a cluster without it, one lamport sent to a predictable address (the next event id, a candidate or a commitment address) would block its creation.
 
 | Instruction | Signer | Accounts (besides the system program) | Checks, in order, then effects | Event |
 | --- | --- | --- | --- | --- |
@@ -93,17 +93,17 @@ Common rules: privileged instructions name their role in a `has_one` constraint;
 | `update_config(args)` | admin | config | `has_one = admin`; each key and `params` optional; keys non-default; `validate_params`; **future events only** | ConfigUpdated |
 | `set_pause(p, c)` | admin | config | `has_one = admin`; either flag optional. Never gates `refund`, `reject_candidate`, `void_event` or `close_window` | PauseChanged |
 | `create_event(args)` | admin | config, event (init, id = `next_event_id`), external_listing (init) | `has_one = admin`; source is Kalshi; `external_id` length; `sha256(external_id) == external_id_hash`; outcome count; `validate_event_times`; cutoff shorter than the window; **freezes `config.params`** into the event; `canon_version = 1`; `next_event_id += 1` | EventCreated |
-| `propose_candidate(args)` | proposer | config, event, candidate / vault / commitment (init), treasury, instructions sysvar | `pause_proposals` off, `pause_commits` off → `check_accepts_proposals` → outcome in range → name and uri valid → ticker valid, `canon_hash == sha256(canonical ticker)` → slate not full (`candidate_count[outcome] < max`) → attestation if `event.params.require_attestation` → amount within bounds → proposer pays the proposal fee to the treasury and the amount to the vault | CandidateProposed, Committed |
+| `propose_candidate(args)` | proposer | config, event, candidate / vault / commitment (init), treasury, instructions sysvar | `pause_proposals` off, `pause_commits` off → `check_accepts_proposals` → outcome in range → `event.canon_version` is the table version this program knows → name and uri valid → ticker valid, `canon_hash == sha256(canonical ticker)` → slate not full (`candidate_count[outcome] < max`) → attestation if `event.params.require_attestation` → amount within bounds → proposer pays the proposal fee to the treasury and the amount to the vault | CandidateProposed, Committed |
 | `commit(amount)` | wallet | config, event, candidate (`has_one = event`), vault, commitment (`init_if_needed`) | `pause_commits` off → `check_accepts_commits` → candidate `Pending` → fresh iff `commitment.wallet == default` → amount and running cap → `total_committed` and (new wallet only) `committer_count` → transfer to the vault | Committed |
 | `co_propose(amount)` | wallet | as `commit`, plus co_proposer_share (init), treasury | both pauses off → wallet is not the proposer → as `commit` → pays the proposal fee → `CoProposerShare` with `weight = amount` (frozen) → `co_proposer_total += amount`, `co_proposer_count += 1` | CoProposed, Committed |
 | `close_window()` | anyone | event | stored status `Open` else `EventStateInvalid`; `now >= window_close` else `WindowNotClosedYet`; stored status → `Closed` | WindowClosed |
 | `void_event()` | admin | config, event | `has_one = admin`; stored status `Open` or `Closed` → `Voided`, `voided_at = now`, `void_reason = 1` (admin) | EventVoided |
 | `reject_candidate()` | admin | config, event, candidate | `has_one = admin`; effective event `Open` (so before close) → candidate `Pending` → `Rejected`; `candidate_count[outcome] -= 1`. The proposal fee stays with the treasury; the ticker stays burned | CandidateRejected |
-| `refund()` | wallet | event, candidate, vault, commitment (closed to wallet), co_proposer_share (optional, closed to wallet) | `is_refundable`; a `Pending` candidate becomes `Refunding` on the first refund; `refunded_total + amount <= total_committed`; vault lamports >= amount; `vault.sub_lamports(amount)`, `wallet.add_lamports(amount)`; `refunded_total += amount` | Refunded |
+| `refund()` | wallet | event, candidate, vault, commitment (closed to wallet), co_proposer_share (required when the commitment says the wallet co-proposed, closed to wallet) | `is_refundable`; if the commitment has `has_share` the co-proposer share must be passed (it closes with the commitment); a `Pending` candidate becomes `Refunding` on the first refund; `refunded_total + amount <= total_committed`; vault lamports >= amount; `vault.sub_lamports(amount)`, `wallet.add_lamports(amount)`; `refunded_total += amount` | Refunded |
 
 Notes:
 - `commit` and `co_propose` re-check the effective status, so a stale stored `Open` cannot let money in after close.
-- `init_if_needed` on `Commitment` is safe because its seeds contain the wallet and the candidate: only that wallet can reach it, an existing account is accepted only if it names the same candidate and wallet, and a pre-funded empty address is initialised normally. Closing the account on refund is what makes a second refund impossible; a re-created commitment would need a new commit, which a refunded candidate no longer accepts.
+- `init_if_needed` on `Commitment` is safe because its seeds contain the wallet and the candidate: only that wallet can reach it, an existing account is accepted only if it names the same candidate and wallet, and a pre-funded empty address is initialised normally. `co_propose` sets `Commitment.has_share`, and `refund` then insists on the share: it can only be closed through its commitment, so a wallet that left it out would strand the rent for good. Closing the account on refund is what makes a second refund impossible; a re-created commitment would need a new commit, which a refunded candidate no longer accepts.
 - The proposer pays rent for Candidate, Vault and Commitment through `init`; the proposal fee is separate and non-refundable. A refund also returns the closed accounts' rent to the wallet.
 - `committer_count` counts each wallet that ever joined, once; refunds do not reduce it. `co_proposer_total` and `weight` are frozen at the co-propose amount (Q-14).
 - A candidate account and its vault are never closed in Phase 1; they stay for the indexer and for the claim and fee logic of later phases.
@@ -135,13 +135,14 @@ Wording follows the Q-05 proposal where a donation or AMM rounding would break t
 | 5 | no proposal, co-proposal or commit at or after the close, nor on a voided event; a voided event only refunds | `proposals_follow_the_window_to_the_second`; `commits_follow_the_window_to_the_second_even_when_nobody_cranks_close`; `void_event_is_admin_only_works_from_open_and_closed_and_blocks_new_money`; the walk (every money-in attempt checked, with counters proving late and voided attempts happen) |
 | 8 | at most one candidate per (event, outcome, canon hash) | `duplicates_are_rejected_even_when_disguised`; `one_candidate_per_canonical_ticker` (same address for every spelling in a family; different canon, outcome or event differ); the shared canon fixtures on both sides |
 | 6 (proposed) | pause never blocks refund, reject, void or close | `neither_pause_flag_blocks_refund_reject_void_or_close` |
-| extra | failed instructions change nothing; the treasury holds exactly the proposal fees; `candidate_count` equals the live slate; statuses only move forward | the random walk, every step |
+| Q-11 | an event enforces the settings it froze, whatever the config says later | `an_event_keeps_the_settings_it_was_created_with_whatever_the_config_says_later` (changes every setting a handler reads, then checks old and new events) |
+| extra | failed instructions change nothing; the treasury holds exactly the proposal fees; `candidate_count` equals the live slate; event and candidate statuses only move forward (Open, Closed, Voided; Pending to Rejected or Refunding, then fixed) | the random walk, every step |
 
 The walk (`tests/invariants.rs`) is seeded and deterministic: 16 walks of 80 steps over two events, six wallets and disguised tickers, with time warps that land on `close - 1`, `close` and `close + 1`. Coverage floors keep it from passing vacuously (currently 58 proposals, 49 commits, 18 co-proposals, 19 refunds during the walks plus 92 in the closing phase, 18 rejections, 16 voids, 769 refused steps verified unchanged, 429 late and 186 voided money-in attempts all refused, 38 at the boundary seconds). Two deliberate bugs, a window that closes one second late and a refund that skips `refunded_total`, were confirmed to fail it.
 
 ## 8. Test harness
 
-LiteSVM 0.15.0 (D-007) with the `precompiles` feature, so the Ed25519 precompile runs for real. `programs/prequel/tests/common` holds the program loader (the compiled `target/deploy/prequel.so`, so run `anchor build` first), clock control, funded wallets, PDA helpers, instruction builders, `send` returning the custom error code and logs, event decoding, a `ProgramData` patch so `initialize_config` can check the upgrade authority, and the Ed25519 instruction builder. Test files: `harness_smoke` (2), `config_events` (10), `propose_commit` (19), `review_hardening` (11), `lifecycle` (12), `invariants` (2), plus 22 unit tests inside the crate (logic, canon, attestation). Run everything with `scripts/rust-checks.sh`.
+LiteSVM 0.15.0 (D-007) with the `precompiles` feature, so the Ed25519 precompile runs for real. `programs/prequel/tests/common` holds the program loader (the compiled `target/deploy/prequel.so`, so run `anchor build` first), clock control, funded wallets, PDA helpers, instruction builders, `send` returning the custom error code and logs, event decoding, a `ProgramData` patch so `initialize_config` can check the upgrade authority, and the Ed25519 instruction builder. Test files: `harness_smoke` (2), `config_events` (10), `propose_commit` (19), `review_hardening` (11), `lifecycle` (12), `invariants` (2), and, added after the second review, `review_followups` (10, one per finding), `attestation_vectors` (3, real precompile) and `layout` (2, byte offsets and sizes of every account), plus 27 unit tests inside the crate (logic, canon, attestation, including the known answers shared with TypeScript). 98 tests in all. Run everything with `scripts/rust-checks.sh`. `scripts/mutation-sweep.py` breaks the program 71 different ways, one at a time, and requires a test to fail for each.
 
 ## 9. Deviations from SPEC.md (for your sign-off)
 
@@ -154,10 +155,13 @@ Made while building, not yet confirmed:
 3. The cap values in section 1 are mine (D-013). In particular `min_raise >= 0.1 SOL`, the 5-minute minimum gap between close and start, and the 60-day window limit.
 4. `require_attestation` lives in `Params`, so each event freezes its own value; the SPEC lists it under Config.
 5. The attestation signs a digest of the message, not the message itself (D-014 version 1.1).
-6. URIs are capped at 128 bytes of printable ASCII (a CIDv1 URL is about 66); Metaplex allows 200.
+6. URIs are capped at 128 bytes of printable ASCII and must start with `ipfs://` or `https://` (a CIDv1 URL is about 66 bytes; Metaplex allows 200). Names may not contain control characters or Unicode format characters (zero-width and bidi-override characters), which costs a few multi-part emoji.
 7. `ExternalListing` is never closed, so a market whose event was voided cannot be listed again. Allowing relisting after a void is deferred (needs your decision).
 8. `Commitment` carries no "claimed or refunded" flag: the account is closed instead, which is what the SPEC table describes ("closed on claim or refund").
 9. `window_open == window_close` is allowed by `create_event`; the event then never takes money and can only be voided. Harmless, and the admin's own mistake to make.
+10. `Params.reserved` must be all zero, and `propose_candidate` refuses an event created under a different ticker-table version. Both exist so that settings and tables added later cannot silently apply to old events.
+11. `reject_candidate` leaves the Candidate account in place, so the rejected ticker is burned for that outcome of that event (the review's M1). This follows from the PDA seeds in SPEC §5; the options are in Q-21.
+12. Admin hand-over is a single step (`update_config`); a mistyped key would lock the admin-only exits until Phase 2. A two-step hand-over using `pending_admin` is recommended in Q-21.
 
 ## 10. What Phases 2 to 4 plug into
 

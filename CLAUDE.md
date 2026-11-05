@@ -70,9 +70,10 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 | Install JS deps | `pnpm install` | verified |
 | JS lint, typecheck, test, web build (28 tasks) | `pnpm turbo run lint typecheck test build` | verified |
 | Lint the scripts folder | `pnpm lint:scripts` | verified |
-| Program: fmt, `anchor build`, clippy, LiteSVM tests (78: 22 unit, 56 integration) | `scripts/rust-checks.sh` | verified |
+| Program: fmt, `anchor build`, clippy, LiteSVM tests (98: 27 unit, 71 integration) | `scripts/rust-checks.sh` | verified |
 | One test file, or the invariant walk with its coverage table | `cargo test -p prequel --test invariants -- --nocapture` (any `--test <file>` works) | verified |
 | Unit tests only (logic, canon, attestation) | `cargo test -p prequel --lib` | verified |
+| Mutation sweep: break the program 71 ways, one at a time; every one must fail a test (do not commit while it runs; it edits the sources) | `python3 -I scripts/mutation-sweep.py` (`--check` only validates the list) | verified |
 | Build the program only. **The LiteSVM tests embed `target/deploy/prequel.so`: run this after every program change, or the tests run the old binary.** | `anchor build` | verified |
 | Kalshi spike (live, read-only) | `NODE_USE_ENV_PROXY=1 pnpm spike:kalshi` | verified |
 | Media spike (dry run without `PINATA_JWT`) | `pnpm spike:media` | verified |
@@ -87,19 +88,20 @@ Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/in
 - Checked math with u128 intermediates; round user payouts down. AMM price and liquidity math needs 256-bit arithmetic.
 - Constraints on every account: seeds, bump, `has_one`, owner, mint, token program. No unchecked remaining accounts. Reject duplicate mutable accounts.
 - Pin CPI program ids (AMM, Metaplex, token program) as constants and check them. *Proposed, Q-12:* a permissionless launch builds every AMM argument itself (config, fee mode, price range, activation) and never takes them from the caller.
-- Verified in the AMM spike: a third party can create the (coin, wSOL) pool first without holding the coin, so a mint that exists before the pool is created can be squatted. *Proposed, not yet approved (Q-02):* an atomic launch. SPEC §5 still has separate `birth_candidate` and `seed_pool`, and SPEC wins until you approve the change.
+- Verified in the AMM spike: a third party can create the (coin, wSOL) pool first without holding the coin, so a mint that exists before the pool is created can be squatted. *Approved 2026-11-05 (Q-02):* an atomic launch, built in Phases 3 and 4. It replaces SPEC §5's separate `birth_candidate` and `seed_pool`; Phase 1 only reserves the fields.
 - Keep money totals in state (`total_committed` and similar). Never infer them from vault lamports: anyone can send lamports to a PDA.
 - Payers for AMM rent must be data-less, system-owned PDAs (D-010).
 - Every program-created PDA (mint, token accounts, vault) needs a creation path that tolerates pre-funding (`CreateAccountAllowPrefund` or top-up + allocate + assign); plain `create_account` fails if an attacker sends lamports first (verified).
 - Verified: after the lock, `split_position` signed by the position owner can still move the locked liquidity into another position (an NFT transfer would too). *Proposed, Q-12:* the owner PDA signs only the exact lock and fee-claim CPIs, never a generic forward.
 - Close accounts safely and block revival.
 - Never export `RUSTUP_TOOLCHAIN` when running `anchor build`: `anchor-lang-idl` 0.1.4 passes it to `cargo +<toolchain>` literally and breaks the IDL step **[read from source by a reviewer, not run]**. Scope it to a single command, as `scripts/bootstrap.sh` does.
-- Time checks use the Clock sysvar (*proposed, Q-04:* through one effective-status function). Test the exact boundary seconds (T-1, T, T+1).
+- Time checks use the Clock sysvar, through one effective-status function (built in Phase 1 as proposed in Q-04 and D-017; Q-04 itself is not yet signed off). Test the exact boundary seconds (T-1, T, T+1).
 - Pause never blocks `claim`, `refund` or `claim_creator_fees`.
-- Ed25519 attestation by instruction introspection: check the precompile program id, that signature, pubkey and message all come from the same instruction, the exact message bytes, and the expiry (*proposed additions, Q-16:* all three index fields = u16::MAX and exactly one signature).
+- Ed25519 attestation by instruction introspection: check the precompile program id, that signature, pubkey and message all come from the same instruction, the exact message bytes, and the expiry (*approved, Q-16, built:* all three index fields = u16::MAX and exactly one signature; the signature covers a sha256 digest of the message, D-014).
 - Permissionless instructions are idempotent. Privileged instructions name their role (admin, resolver, canonicalizer).
 - Admin, upgrade authority and treasury are a Squads multisig on devnet (Phase 10).
-- Every invariant in SPEC §5 gets a test (rewording proposed in Q-05, not yet approved).
+- Every invariant in SPEC §5 gets a test. Phase 1 tests the Q-05 rewordings (donations and refunds make the literal wording false); Q-05 itself is not yet signed off.
+- Handlers read the settings an event froze (`event.params`), never `config.params`: the admin must not be able to change a live event's economics (Q-11). `tests/review_followups.rs` pins every handler to this.
 - Built in Phase 1 and tested (do not regress): every time check goes through the effective event status (a stored `Open` at or after `window_close` is `Closed`); the vault is a program-owned data account and `refund` debits it directly, so a donation can never strand the last refund (D-010); candidate and vault accounts never close in Phase 1; `reject_candidate` works only before close; `propose_candidate` and `co_propose` recompute or enforce everything themselves (canon hash, slate cap, attestation digest) and take nothing from the caller on trust.
 - Any change to money, time or status logic must keep `programs/prequel/tests/invariants.rs` green. Never lower its coverage floors to make it pass; if a floor fails, the walk stopped exercising something.
 

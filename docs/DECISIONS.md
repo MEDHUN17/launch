@@ -28,6 +28,7 @@ One entry per decision. A version or doc link goes in only after it was read fro
 | D-016 | Rust dependencies added in Phase 1 | 1 | Decided, flagged for approval |
 | D-017 | Phase 1 behaviours chosen while building | 1 | Decided; the economic ones are in Q-21 |
 | D-018 | Invariant tests as a seeded random walk | 1 | Decided |
+| D-019 | Second independent code review of Phase 1 | 1 | Done; open items in Q-21 |
 | Q-01 to Q-21 | Spec questions | various | Q-02, Q-11, Q-13, Q-14, Q-16, Q-19 decided 2026-11-05; the rest open, section B (Q-21 is new: Phase 1 choices to sign off) |
 
 ## A. Decisions
@@ -140,6 +141,7 @@ One entry per decision. A version or doc link goes in only after it was read fro
 - **Why not a system-owned vault:** under Solana's rent rule a system account can only be left at 0 lamports or at least 890,880. A donation of even 1 lamport to a system-owned vault makes the last refund fail (it would leave 1 lamport), so an attacker could block the final committer. A program-owned vault only gains a harmless surplus, refunds just debit the committed amount, and invariant 2's wording ("vault ends at the rent-exempt minimum") stays true.
 - **Why the seeder stays system-owned:** AMM rent is paid through System Program transfers, which need a data-less payer (verified in the AMM spike). At launch the program moves the pool SOL from the vault to the seeder by direct lamport arithmetic, which is allowed because the program owns the vault.
 - **Rules:** accounting comes from `Candidate` state, never vault lamports; every program-created PDA must tolerate pre-funding (Anchor 1.2.2 `init` does; tested); invariants 1 and 2 get the reworded versions in Q-05 as extra tests.
+- **Pre-funding relies on SIMD-0312 [V-me, 2026-11-05].** When an address already holds lamports, Anchor 1.2.2's `init` issues the System Program's `CreateAccountAllowPrefund` instruction (read in `anchor-syn` 1.2.2, `codegen/accounts/constraints.rs`), not separate transfer, allocate and assign steps. `solana feature status --display-all` shows the feature (`6sPDzwyARRExKH52LECxcGoqziH8G7SZofwuxi8Ja331`, "SIMD-0312: Enable CreateAccountAllowPrefund system program instruction") active on **devnet since epoch 1052** (slot 454,464,000) and on a local **Agave 4.3.2 test validator from epoch 0**. On a cluster without it, one lamport sent to a predictable address (the next event id, a candidate or commitment address) would block creating it. Mainnet is out of scope.
 - **Built and tested in Phase 1 [V-me]:** `Vault` is a program-owned data account; `refund` debits it with `sub_lamports` and credits the wallet with `add_lamports`, and never reads vault lamports to decide what is owed. Tests: `a_dust_donation_to_the_vault_cannot_block_the_last_refund`, `refunds_still_work_after_the_rent_rate_falls`, `pre_funding_every_address_the_program_creates_does_not_block_it`, and the random walk, which interleaves donations with every operation.
 
 ### D-011 · Dust rule
@@ -156,7 +158,7 @@ One entry per decision. A version or doc link goes in only after it was read fro
 - Fees: `success_fee_bps` 0 to 500; the fee split sums to 10,000 bps; `proposal_fee` 0.001 to 1 SOL.
 - Time settings: `dispute_window` 60 s to 7 d; `max_resolution_delay` 1 d to 30 d; `launch_window` 10 min to 7 d (default 1 d); `proposal_cutoff` 0 to 7 d (default 0; see Q-21).
 - Amounts: `dispute_bond` 0.01 to 10 SOL; `min_commit` at least 0.001 SOL; `min_raise` at least `min_commit` and between 0.1 and 1,000 SOL (the floor exists because a winner has to pay about 0.028 SOL of launch costs, measured in the AMM spike, and still seed a pool); `max_commit_per_wallet` 0 (no cap) or at least `min_commit`; `max_candidates_per_outcome` 1 to 32.
-- Event times: the window closes in the future, lasts at most 60 days and ends at least 5 minutes before `event_start`; `expected_resolution` is between `event_start` and `event_start` + 90 days; a non-zero `proposal_cutoff` must be shorter than the window. Candidate URIs: at most 128 bytes of printable ASCII.
+- Event times: the window closes in the future, lasts at most 60 days and ends at least 5 minutes before `event_start`; `expected_resolution` is between `event_start` and `event_start` + 90 days; a non-zero `proposal_cutoff` must be shorter than the window. `Params.reserved` must be all zero (later settings are carved out of it, and anything sent today would otherwise be frozen into every event). Candidate URIs: at most 128 bytes of printable ASCII, starting `ipfs://` or `https://`. Names: at most 32 bytes, no control or Unicode format characters. Every bound is tested on both sides (`logic::followup_tests`).
 - Why caps at all: with frozen per-event settings (Q-11), the caps are what stops a hostile or mistaken admin from creating an event whose economics are abusive (a 100% fee, a one-second dispute window, an unreachable `min_raise`).
 
 ### D-014 · Attestation message v1.1 (Q-16)
@@ -164,7 +166,9 @@ One entry per decision. A version or doc link goes in only after it was read fro
 - **Phase 1 · Decided with Q-16; revised during the build (v1.1) to sign a digest.** The canonicalizer signs the 32-byte sha256 of this 251-byte message: `"PREQUEL-PROPOSE-V1"` (18 ASCII bytes) || program id || config || event || outcome (1) || canon hash (32) || content hash (32) || image hash (32) || proposer || expiry (i64 LE), where content hash = sha256( len(name) u16le || name || len(ticker) u16le || uppercased ticker || len(uri) u16le || uri ). The lengths make the encoding unambiguous; v1 separated the three fields with 0x00 bytes.
 - **Why a digest:** putting all 251 bytes into the Ed25519 instruction pushed a maximum-length proposal (32-byte name, 128-byte URI) toward the 1,232-byte packet limit. With the digest, the measured worst case is 938 bytes including a priority fee (`a_maximum_length_attested_proposal_fits_in_one_packet_with_a_priority_fee`). The domain tag, program id, config, event, proposer and expiry stay inside the digest, so replay across deployments, events and wallets is still impossible, and the program recomputes the same message on-chain, so nothing is lost. [V-me]
 - **What the program checks** (`attestation.rs`): the Instructions sysvar address; the previous instruction belongs to the Ed25519 program; the header says exactly one signature; all three `*_instruction_index` fields are `u16::MAX`; the public key is the configured canonicalizer; the signed bytes equal the recomputed digest; `now <= expiry`. The runtime verifies the signature itself. This runs only when `event.params.require_attestation` is true (frozen per event; on for the beta).
-- **Open for Phase 7:** the Ed25519 instruction must sit immediately before `propose_candidate`. Confirm with real wallets (Phantom, Solflare, Backpack) that a transaction built this way is accepted. LiteSVM tests cover a real precompile signature, a tampered one and every malformed layout.
+- **Open for Phase 7:** the Ed25519 instruction must sit immediately before `propose_candidate`. Confirm with real wallets (Phantom, Solflare, Backpack) that a transaction built this way is accepted. LiteSVM tests cover a real precompile signature, a tampered one, the redirected-index variants, and an instruction with two VALID signatures (which only the program's own count check refuses; a one-signature instruction with its count byte edited to 2 is refused by the precompile itself).
+- **Known answers [V-me]:** `packages/shared/canon/attestation-vectors.tsv`, written by `gen-attestation-vectors.py` from this decision's text alone (hashlib, no shared code), pins four full 251-byte messages and their digests. A Rust unit test and the TypeScript module `packages/shared/src/attestation.ts` (the future signer) both check it, so a reordered field, a u32 length prefix or the wrong ticker form in either language fails a test.
+- **Not bounded on-chain:** the expiry may be any future time. An attestation is single-use by construction (the candidate address makes a second proposal fail), so a long expiry cannot enable replay; keeping expiries short is the Canon service's job (SPEC §6).
 
 ### D-015 · Ticker canon v1 (Q-19)
 
@@ -190,12 +194,40 @@ One entry per decision. A version or doc link goes in only after it was read fro
 - `committer_count` counts each wallet that ever joined and is not reduced by refunds. `co_proposer_total` and each share's `weight` are frozen at the co-propose amount (Q-14).
 - Account layouts: fixed-size fields first and strings last; every long-lived account has a reserved tail; fields for Phases 2 to 4 exist from day one, so nothing is ever reallocated (Anchor rejects an existing account whose size differs).
 - `ExternalListing` is never closed, so a voided market cannot be listed again (Q-20, Q-21).
+- `co_propose` counts as a proposal for the pause flags (either flag stops it) but as a commit for `proposal_cutoff` (the cutoff does not stop it): the cutoff exists so that the admin can review new candidates, and joining an existing one adds no new content. Pinned by `rejection_and_co_proposing_continue_after_proposals_have_stopped`.
+- `Commitment.has_share` (set by `co_propose`) makes `refund` require the wallet's `CoProposerShare`, so its rent cannot be stranded. `propose_candidate` refuses an event whose `canon_version` differs from the program's table version. Names reject invisible format characters; URIs must start `ipfs://` or `https://`.
+- `reject_candidate` burns the ticker for that outcome of that event, because the Candidate account stays (the review's M1). Options and a recommendation are in Q-21.
 
 ### D-018 · Invariant tests as a seeded random walk
 
-- **Phase 1 · Decided 2026-11-05.** `programs/prequel/tests/invariants.rs` runs 16 deterministic walks of 80 steps (a small xorshift generator, no new dependency) over two events, six wallets, disguised tickers, and time warps that land on `close - 1`, `close` and `close + 1`. After every step it checks invariants 1, 2, 4, 5 and 8 and the extras listed in `docs/PHASE1_DESIGN.md` section 7. A failed step must leave every tracked account byte-identical, and a failed proposal must leave no account behind. Coverage floors fail the test if a walk stops exercising an instruction, so it cannot pass vacuously.
+- **Phase 1 · Decided 2026-11-05.** `programs/prequel/tests/invariants.rs` runs 16 deterministic walks of 80 steps (a small xorshift generator, no new dependency) over two events, six wallets, disguised tickers, and time warps that land on `close - 1`, `close` and `close + 1`. After every step it checks invariants 1, 2, 4, 5 and 8 and the extras listed in `docs/PHASE1_DESIGN.md` section 7 (including that event and candidate statuses only move forward). A failed step must leave every tracked account byte-identical, and a failed proposal must leave no account behind. Coverage floors fail the test if a walk stops exercising an instruction, so it cannot pass vacuously.
 - **Mutation check [V-me]:** a window that closes one second late (`now > window_close`) fails at seed 1, step 36 with "invariant 5: money went in outside the window"; a refund that skips `refunded_total` fails invariant 1. Both mutations were reverted and the real binary rebuilt before the final run.
+- `scripts/mutation-sweep.py` automates this check: 71 one-line breakages (the second review's surviving-mutation list plus the core rules), each of which must fail at least one test. Result in D-019.
 - Trident fuzzing stays in Phase 9; this walk is the Phase 1 property test promised in PROGRESS.md.
+
+### D-019 · Second independent code review of Phase 1
+
+- **Phase 1 · Done 2026-11-05.** An independent Opus reviewer at maximum effort read the finished program and tests (commit 10eebdf), read-only: it ran nothing, and its mutation claims come from reading. **No High finding:** no path pays anyone more than their commitment, strands a refund, lets money in at or after close or on a voided event, or creates a second candidate for a canonical ticker. It found the money flow, time handling, attestation parsing (checked against the `agave-precompiles` source), account constraints, canon and layouts sound. Most findings were test gaps. I checked each claim against the code (and Anchor's source and the clusters, for the factual ones) before acting.
+- **Dispositions:**
+
+| Finding | Verdict | What I did |
+| --- | --- | --- |
+| M1 reject burns the ticker | Real design consequence, written in D-017 but not offered for sign-off | Q-21 item 9, with options |
+| L1 frozen settings had no behavioural test | Real | Test that changes every setting after `create_event`; mutations M02a to M02g are killed |
+| L2 ProgramData binding untested | Real | Test with a second deployed program under an attacker's authority; M01 killed |
+| L3 no independent attestation test vector | Real | Known-answer file generated in Python, checked by Rust and by a new TypeScript module; lowercase attested ticker test; M04 and M05 killed |
+| L4 `Params.reserved` unchecked | Real | Must be zero (`ParamsReservedNotZero`) |
+| L5 `canon_version` never checked | Real | `propose_candidate` requires the program's table version (`CanonVersionMismatch`) |
+| L6 a co-proposer could orphan its share | Real | `Commitment.has_share`; `refund` requires the share (`CoProposerShareRequired`) |
+| L7 pre-funding depends on SIMD-0312 | Real; verified | Active on devnet (epoch 1052) and on the local Agave 4.3.2 validator; recorded in D-010; design note corrected |
+| L8 time bounds | Partly | Attestation expiry: declined (single use, D-014). Event horizon and the 5-minute floor: Q-21 items 11 and 12 |
+| L9 loose name and URI checks | Real | Format characters rejected in names; URIs must start `ipfs://` or `https://` |
+| L10 admin handover and key tests | Real | Missing key tests added; the two-step hand-over is Q-21 item 10 |
+| L11 listing seed without source, case-sensitive id; cutoff and co_propose | Considered | Source byte not added (v0 has one source; a second one would use a new seed prefix). Case not restricted: the Kalshi id charset is not documented here and only the admin lists events. Cutoff semantics documented (D-017) |
+| Weak assertions | Real | Swap tests pin the error class; the self-equality assertion removed; two valid signatures test added |
+
+- **One reviewer claim was wrong:** it said Q-02, Q-04, Q-05 and Q-16 are all approved. Only Q-02 and Q-16 are (with Q-11, Q-13, Q-14, Q-19). Q-04 (effective-status function) and Q-05 (reworded invariants) are implemented as proposed but not signed off; CLAUDE.md now says so and Q-21 item 13 asks.
+- **Mutation sweep [V-me]:** run in progress when this was written; the result is recorded below once it finishes.
 
 ## B. Spec questions
 
@@ -275,7 +307,7 @@ Track `claimed_lamports`; sweepable tokens = balance − ceil(unclaimed × commi
 0/1/5 are mapped but 2/Z, 8/B, 6/G are not; changing the table later remaps candidate addresses. TypeScript `toUpperCase` is Unicode-aware ("ß" → "SS"). Freeze version 1, store `canon_version`, reject non-ASCII before uppercasing in both languages.
 
 **Q-20 Rent lifetimes and wallet caps** · low · Rev (L-2, L-3)
-Vault rent stays forever, `CoProposerShare` cannot close on a refunding candidate, `ExternalListing` blocks relisting. Add close cranks that return rent to its payer. Document `max_commit_per_wallet` as a UX guard only (N wallets bypass it).
+Vault rent stays forever, `ExternalListing` blocks relisting. (`CoProposerShare` now closes with its commitment on refund; Phase 1 requires it when the wallet co-proposed.) Add close cranks that return rent to its payer. Document `max_commit_per_wallet` as a UX guard only (N wallets bypass it).
 
 **Q-21 Phase 1 choices that go beyond the spec or your approvals** · medium · self (design review item M8)
 Nothing here undoes an approved decision. Each item is a setting or behaviour I chose while building; please confirm or overrule (the full list with reasons is in `docs/PHASE1_DESIGN.md` section 9).
@@ -287,6 +319,11 @@ Nothing here undoes an approved decision. Each item is a setting or behaviour I 
 6. `require_attestation` is part of the frozen per-event settings, not a Config-only switch.
 7. `create_event` accepts a zero-length window (`window_open == window_close`); such an event takes no money and can only be voided.
 8. Until Phase 2 adds the permissionless void, only the admin can free funds from a closed event.
+9. **Ticker burn on reject (review M1).** After `reject_candidate` the Candidate account stays, so nobody can propose that ticker on that outcome of that event again (every spelling hashes to the same address). A griefer pays the 0.02 SOL fee plus about 0.0065 SOL of rent that is never returned; with attestation on (the beta) the Canon service would have to sign the bad proposal first. Options: (a) keep it and rely on attestation for the beta, deciding again before any launch without attestation (my recommendation: nothing is deployed, so changing later costs nothing); (b) close the candidate and vault when the proposer is the only committer (does not help against two colluding wallets); (c) a generation number in the seeds (an extra account; departs from SPEC §5's seeds); (d) close a rejected candidate once every committer has exited, with a permissionless push-refund so a colluding wallet cannot hold it open.
+10. **Two-step admin hand-over.** `update_config` changes the admin in one step, and a mistyped key would lock `void_event` and `reject_candidate`, the only exits in Phase 1. Recommended: `update_config` sets `pending_admin`, and the new key calls an `accept_admin` instruction (a Squads vault can do that through its normal execution; a same-transaction co-signature cannot work for a multisig PDA). It adds an instruction to the SPEC list, so I have not added it.
+11. **How long can a commit window lock funds?** `event_start` has no upper bound, and Phase 2's delay-void counts from `expected_resolution` (Q-03). An admin could list an event that starts years away. Options: cap `event_start - now` (for example 180 days) and/or `event_start - window_close`. Decide with Q-03 in Phase 2.
+12. **Clock drift and the 5-minute floor.** The cluster clock can differ from real time by seconds, rarely by minutes, so a 5-minute gap between close and start is thin when the start must not be knowable. SPEC's default is 60 minutes. Consider a floor of 15 or 30 minutes (belongs with item 1).
+13. **Q-04 and Q-05 are implemented as proposed but not signed off:** the effective-status function (D-017) and the reworded invariants 1 and 2 (donations and refunds make the literal wording false). Please confirm.
 
 ## C. Registry snapshot (observation on 2026-11-05, not a pin)
 
