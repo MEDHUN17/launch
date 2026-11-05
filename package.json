@@ -3,8 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "description": "Prequel: a Solana launchpad for event-conditional memecoins",
+  "type": "module",
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "build": "turbo run build",
     "lint": "turbo run lint",
@@ -12,7 +15,10 @@
     "test": "turbo run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "spike:kalshi": "node scripts/spikes/kalshi/spike.ts"
+    "spike:kalshi": "node scripts/spikes/kalshi/spike.ts",
+    "lint:scripts": "eslint scripts",
+    "spike:media": "node scripts/spikes/media/spike.ts",
+    "spike:amm": "scripts/spikes/amm/run.sh"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

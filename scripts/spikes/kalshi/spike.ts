@@ -24,6 +24,7 @@ const BASE = process.env.KALSHI_BASE ?? "https://external-api.kalshi.com/trade-a
 const OUT = join(dirname(fileURLToPath(import.meta.url)), ".out");
 const UA = "prequel-phase0-spike";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = Record<string, any>;
 type Reply = { status: number; raw: Uint8Array; json: Json; url: string; date: string | null };
 

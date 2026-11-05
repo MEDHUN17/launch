@@ -6,7 +6,7 @@ Prequel is a Solana launchpad for event-conditional memecoins. Traders commit SO
 
 ## Session protocol
 
-1. Start: read CLAUDE.md, SPEC.md and PROGRESS.md. Check `docs/DECISIONS.md` for open spec questions that touch your work.
+1. Start: read CLAUDE.md, SPEC.md and PROGRESS.md. Check `docs/DECISIONS.md` for open spec questions that touch your work, and PROGRESS.md "Needs your decision" before any Phase 1 work.
 2. Continue with the next unchecked item in the current phase. Plan first, build, then run all tests before marking anything done.
 3. Work one phase at a time. Show a plan first, and wait for approval on anything expensive to reverse.
 4. End: update PROGRESS.md (tick a box only when its criterion passes; add a session-log line) and `docs/DECISIONS.md` (one entry per decision). Commit and push to the session's working branch.
@@ -17,7 +17,7 @@ Prequel is a Solana launchpad for event-conditional memecoins. Traders commit SO
 - Users can always exit. Pausing may stop new proposals and commits, never claims or refunds.
 - Nobody holds committers' SOL. It sits in a per-candidate program vault until refunded or locked as liquidity.
 - No dev allocation, no presale, no platform token.
-- Verify, don't recall. Before integrating any external program or API, read its current official docs and record the link and version in `docs/DECISIONS.md`. Do not write code against an API from memory.
+- Verify, don't recall. Before integrating any external program or API, read its current official docs and record the link and version in `docs/DECISIONS.md`. Do not write code against an API from memory. (Anchor is 1.2.2 and Agave 4.x; most remembered APIs are older.)
 - Tests gate progress. A phase is done only when its "Done when" criteria in SPEC §11 pass.
 
 ## Working rules (SPEC §12)
@@ -30,14 +30,14 @@ Prequel is a Solana launchpad for event-conditional memecoins. Traders commit SO
 - Never run anything against mainnet, never request real funds, and never write deploy scripts that target mainnet.
 - If the spec is wrong or unclear, stop and ask. Don't change economics or security rules on your own.
 
-## Stack (SPEC §4; versions are pinned in `docs/DECISIONS.md` D-001 once decided)
+## Stack (SPEC §4; exact pins in `docs/DECISIONS.md` D-001)
 
-- **On-chain:** one Anchor program in Rust on the current Agave toolchain. Metaplex Token Metadata via CPI. Classic SPL Token unless Phase 0 finds a strong reason for Token-2022.
-- **AMM:** Meteora DAMM v2 or Raydium CPMM, chosen in Phase 0 (D-002). No in-house AMM.
-- **Client SDK:** TypeScript generated from the IDL with the generator current Anchor docs recommend (for example Codama).
+- **On-chain:** one Anchor 1.2.2 program on Agave 4.3.2. Metaplex Token Metadata via CPI. Classic SPL Token (D-006).
+- **AMM:** Meteora DAMM v2 on its public 1% config 11, provisional and only with an atomic launch (D-002, Q-02). No in-house AMM.
+- **Client SDK:** TypeScript generated from the IDL (generator pending, D-008).
 - **Backend:** Node and TypeScript. Fastify API, indexer, keeper worker. Postgres via Drizzle; Redis with BullMQ.
 - **Frontend:** Next.js App Router, TypeScript, Tailwind, shadcn/ui, TanStack Query, Solana wallet adapter (Phantom, Solflare, Backpack).
-- **Media:** IPFS (Pinata) or Arweave, chosen in Phase 0 (D-005), with Metaplex-standard JSON.
+- **Media:** IPFS via Pinata, provisional (D-005), with Metaplex-standard JSON.
 - **RPC:** Helius or similar, keys only in env.
 - **Monorepo:** pnpm workspaces plus Turborepo.
 
@@ -46,7 +46,7 @@ Prequel is a Solana launchpad for event-conditional memecoins. Traders commit SO
 The repo root is the monorepo root (SPEC calls it `prequel/`; the GitHub repo is named `launch`).
 
 ```
-programs/prequel/   Anchor program
+programs/prequel/   Anchor program (Rust LiteSVM tests live in programs/prequel/tests)
 packages/sdk/       generated client, PDA helpers, birth math
 packages/shared/    constants, ticker canon lib, types, zod schemas
 packages/db/        schema and migrations
@@ -54,56 +54,60 @@ apps/web/           Next.js app (users and admin)
 apps/api/           REST and websocket API, media and Canon service
 apps/indexer/       program logs to Postgres
 apps/keeper/        Kalshi ingestion, resolver, cranks, reconciliation
-tests/              program integration tests
-scripts/            spikes, devnet deploy, seed data
-docs/               ARCHITECTURE, THREAT_MODEL, RUNBOOK, DECISIONS
+tests/              cross-program and local-validator tests (empty so far)
+scripts/            bootstrap, rust-checks, spikes/{kalshi,amm,media}
+docs/               DECISIONS (ARCHITECTURE, THREAT_MODEL, RUNBOOK still to write)
 SPEC.md  CLAUDE.md  PROGRESS.md
 ```
 
-## Commands
+## Commands (verified 2026-11-05 unless marked planned)
 
-**Status: PLANNED. Nothing below has been run yet.** Phase 0 task 0.2 replaces this table with verified commands. Do not trust a command until its status says `verified`. Package names and script names are tentative.
+Put the Solana tools on `PATH` first: `export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"`.
 
 | Purpose | Command | Status |
 | --- | --- | --- |
-| Install JS deps | `pnpm install` | planned |
-| Build, lint, typecheck, test all JS packages | `pnpm turbo run build lint typecheck test` | planned |
-| Build the program | `anchor build` | planned |
-| Rust lint | `cargo clippy --all-targets -- -D warnings` | planned |
-| Rust unit tests | `cargo test` | planned |
-| Program integration tests (LiteSVM, clock warping) | TBD in Phase 0/1 (D-007) | planned |
-| Program tests on a local validator with cloned AMM and Metaplex | `anchor test` | planned |
-| Regenerate the SDK from the IDL | TBD (D-008) | planned |
+| Install pinned Agave, Anchor CLI, solana-verify (idempotent) | `scripts/bootstrap.sh` (`BOOTSTRAP_SKIP_VERIFY=1` skips solana-verify) | verified |
+| Install JS deps | `pnpm install` | verified |
+| JS lint, typecheck, test, web build (28 tasks) | `pnpm turbo run lint typecheck test build` | verified |
+| Lint the scripts folder | `pnpm lint:scripts` | verified |
+| Program: fmt, `anchor build`, clippy, LiteSVM tests | `scripts/rust-checks.sh` | verified |
+| Build the program only | `anchor build` | verified |
+| Kalshi spike (live, read-only) | `NODE_USE_ENV_PROXY=1 pnpm spike:kalshi` | verified |
+| Media spike (dry run without `PINATA_JWT`) | `pnpm spike:media` | verified |
+| AMM spike (devnet fixtures, build, LiteSVM tests) | `pnpm spike:amm` | verified |
 | DB migrations | `pnpm --filter @prequel/db <migrate>` | planned |
-| Web dev server | `pnpm --filter web dev` | planned |
-| End-to-end tests | `pnpm --filter web exec playwright test` | planned |
+| Web dev server | `pnpm --filter @prequel/web dev` | planned |
+| End-to-end tests | `pnpm --filter @prequel/web exec playwright test` | planned |
 | Verifiable build (before any public deploy) | `solana-verify build` (needs Docker) | planned |
 
-## Security checklist for the program (SPEC §5)
+## Security checklist for the program (SPEC §5, plus Phase 0 findings)
 
-- Checked math with u128 intermediates; round user payouts down.
+- Checked math with u128 intermediates; round user payouts down. AMM price and liquidity math needs 256-bit arithmetic.
 - Constraints on every account: seeds, bump, `has_one`, owner, mint, token program. No unchecked remaining accounts. Reject duplicate mutable accounts.
-- Pin CPI program ids (AMM, Metaplex, token program) as constants and check them.
+- Pin CPI program ids (AMM, Metaplex, token program) as constants and check them. **A permissionless launch must build every AMM argument itself** (config, fee mode, price range, activation) and never take them from the caller (Q-12).
+- **The coin's mint must not exist before the pool is created in the same transaction**, or a third party can create the pool first without holding the coin (verified, Q-02).
 - Keep money totals in state (`total_committed` and similar). Never infer them from vault lamports: anyone can send lamports to a PDA.
+- Payers for AMM rent must be data-less, system-owned PDAs (D-010).
 - Close accounts safely and block revival.
-- Time checks use the Clock sysvar. Test the exact boundary seconds (T-1, T, T+1).
+- Time checks use the Clock sysvar through one effective-status function. Test the exact boundary seconds (T-1, T, T+1).
 - Pause never blocks `claim`, `refund` or `claim_creator_fees`.
-- Ed25519 attestation by instruction introspection: check the precompile program id, that signature, pubkey and message all come from the same instruction, the exact message bytes, and the expiry.
+- Ed25519 attestation by instruction introspection: check the precompile program id, that signature, pubkey and message all come from the same instruction (all three index fields = u16::MAX), exactly one signature, the exact message bytes, and the expiry.
 - Permissionless instructions are idempotent. Privileged instructions name their role (admin, resolver, canonicalizer).
 - Admin, upgrade authority and treasury are a Squads multisig on devnet (Phase 10).
-- Every invariant in SPEC §5 gets a test.
+- Every invariant in SPEC §5 gets a test (with the rewording proposed in Q-05).
 
 ## Environment notes (cloud sandbox)
 
-- The container is ephemeral. Commit and push before a session ends.
-- Not preinstalled: Solana/Agave CLI, Anchor CLI, `solana-verify`. Phase 0 task 0.1 adds an idempotent bootstrap script. Present: Rust, Node, pnpm, `psql` 16, `redis-server` 7. There is no Docker daemon, so use docker-compose in CI and on dev machines, and start Postgres and Redis directly here.
-- Outbound network is allowlisted. Package registries (crates.io, npm, PyPI) work; other hosts may be denied. See "Blockers" in PROGRESS.md. If a host is denied, report it and carry on with work that doesn't need it. Don't mock or invent results for the missing part, and don't route around the policy.
-- GitHub access is scoped to this repo. Attach other public repos only when the task needs them.
+- The container is ephemeral. Commit and push before a session ends. A fresh container needs `scripts/bootstrap.sh` (about 5 minutes the first time; `anchor-cli` compiles from source).
+- Network access is Full for this environment as of 2026-11-05. Still blocked for scripted clients: kalshi.com and solana.com (browser-verification checkpoint), and GitHub outside this repo (403). Docs sites that publish `llms.txt` can be read as Markdown (Kalshi, Meteora, Raydium, Pinata, Metaplex under `www.metaplex.com/docs`). Don't mock results for anything you cannot reach, and don't route around the policy.
+- Node's built-in `fetch` ignores the proxy: export `NODE_USE_ENV_PROXY=1` for scripts that call the network. Node 22.23 runs `.ts` files directly (type stripping); keep spike scripts erasable-syntax only.
+- Devnet reads (program and account dumps) are allowed and are how AMM fixtures are made; never read or write mainnet.
+- Docker has no daemon here, so `solana-verify` and docker-compose cannot run; `psql` 16 and `redis-server` 7 are installed and can be started directly.
 - Open a pull request only when the user asks. Work on the branch the session assigns.
 
 ## Decisions log
 
-Every decision goes in `docs/DECISIONS.md` as one entry: options, choice, why, doc links and versions read (with the date). Spec gaps go in as Q-entries and wait for the user's answer.
+Every decision goes in `docs/DECISIONS.md` as one entry: options, choice, why, doc links and versions read (with the date), and an evidence tag ([V-me], [V-rev], [U]). Spec gaps go in as Q-entries and wait for the user's answer.
 
 ## Out of scope for v0 (SPEC §13)
 

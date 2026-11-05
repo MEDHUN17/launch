@@ -27,6 +27,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run lint typecheck test build
+      - run: pnpm lint:scripts
 
   program:
     name: Program (fmt, anchor build, clippy, LiteSVM tests)

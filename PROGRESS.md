@@ -1,35 +1,49 @@
 # PROGRESS
 
-**Current phase:** 0 — Setup and spikes
-**State:** plan shown, awaiting the user's go-ahead. No code written yet.
-**Last updated:** 2026-11-05
+**Current phase:** 0 — Setup and spikes · **State:** Phase 0 work is done and pushed; the spec questions in `docs/DECISIONS.md` section B need your answers before Phase 1 code.
+**Last updated:** 2026-11-05 (session 1)
 
 Tick a box only when its criterion passes (tests green, or the artifact exists and was checked). Each phase lists SPEC §11's "Build" and "Done when" text for reference; the checkboxes are the gate. Each session ends with a log line at the bottom.
 
-## Blockers
+## Blockers and open items
 
-- [ ] **Network policy denies hosts Phase 0 needs** (checked 2026-11-05). Package registries work (crates.io, npm, PyPI). Denied: `release.anza.xyz`, `api.devnet.solana.com`, `www.anchor-lang.com`, `solana.com`, `docs.meteora.ag`, `docs.raydium.io`, `developers.metaplex.com`, `docs.kalshi.com`, `api.elections.kalshi.com`, `demo-api.kalshi.co`, `docs.pinata.cloud`, `api.pinata.cloud`, `docs.squads.so`, `pubapi.dflow.net`. The user must widen the environment's Network access (cloud environment menu in the session title bar, then Edit, then Network access). Blocks tasks 0.1 and 0.4–0.7, and the Anchor stub in 0.2 (it needs 0.1). The JS side of 0.2 and the CI config in 0.3 can proceed.
-- [ ] **Toolchain missing in the sandbox:** Solana/Agave CLI, Anchor CLI, `solana-verify`. Present: Rust 1.97.0, Node 22.23.4, pnpm 10.28.0. No Docker daemon. Covered by task 0.1.
+- [x] **Network** — resolved 2026-11-05 (Network access set to Full). Remaining limits: kalshi.com and solana.com show a browser-verification checkpoint to scripted clients; GitHub outside this repo is scoped (403).
+- [ ] **Kalshi API and data terms need a human reader** (D-003). The sandbox cannot read them. Until they are reviewed, no Kalshi payloads are committed.
+- [ ] **Pinata API key** for an upload test (optional, D-005).
+- [ ] **First remote CI run** — the workflow is written and every step passes locally; confirm on GitHub (action versions are unverified, D-001).
+
+## Needs your decision before Phase 1 code
+
+These come from my own review and from two independent Opus reviews (details in `docs/DECISIONS.md` section B). Phase 1 fixes account layouts, so they are cheap now and expensive later.
+
+1. **Q-02 Atomic launch (critical).** Verified on localnet: someone holding none of the coin can create the (coin, wSOL) pool on Meteora's 1% config first, which would strand about 99% of a raise. Proposal: mint, wrap, create pool, lock, revoke authority and mark Born in one instruction, plus a birth deadline that turns an unlaunched winner into a refund. This amends §5.
+2. **Q-11 Snapshot and bound parameters per event** so the admin cannot change fees, delays or bonds on a live event.
+3. **Q-14 Co-proposer economics** (`co_propose` currently beats `commit` for free).
+4. **Q-13, Q-16, Q-19 Slate and Canon policy** (slot grabbing, attestation scope, confusables table versioning).
+5. **D-010 / Q-05 Vault model and rewritten invariants.**
+6. Also answer: D-002 (Meteora, provisional), Q-15 (delay trading after launch; exit math), Q-07 (who pays birth rent).
 
 ## Phase 0 — Setup and spikes
 
 Build: Monorepo, pinned toolchain, CLAUDE.md, CI skeleton. Spikes: AMM choice (create a pool, lock the LP and claim fees by CPI on localnet); Kalshi API (list markets, read a settled one); DFlow on-chain settlement (research only); media storage.
 Done when: Spike scripts run; four decisions logged.
 
-- [ ] Spike scripts run (AMM, Kalshi, media storage; DFlow is research only)
-- [ ] Four decisions logged in `docs/DECISIONS.md`: D-002 AMM, D-003 Kalshi, D-004 DFlow, D-005 media storage
+- [x] Spike scripts run: `pnpm spike:amm` (3 LiteSVM tests against the real devnet binary), `pnpm spike:kalshi` (live read-only API), `pnpm spike:media` (dry run only: the upload path is untested, no Pinata key). DFlow is research only.
+- [x] Four decisions logged in `docs/DECISIONS.md`: D-002 AMM (provisional), D-003 Kalshi, D-004 DFlow (inconclusive), D-005 media storage (provisional).
 
-Proposed task breakdown (awaiting approval):
+Task breakdown:
 
 - [x] CLAUDE.md, PROGRESS.md, docs/DECISIONS.md created (kickoff)
-- [ ] 0.1 Bootstrap the toolchain with an idempotent `scripts/bootstrap.sh`: Agave/Solana CLI and platform tools, Anchor CLI, `solana-verify`. Read compatibility notes, then pin versions (D-001). *Needs network.*
-- [ ] 0.2 Monorepo skeleton per SPEC §4: pnpm workspaces and Turborepo, package stubs, `.gitignore` (keypairs, `.env`, build output), `.env.example`, `rust-toolchain.toml`, `.nvmrc`, plus a compile-only Anchor program stub to prove the toolchain (the stub needs 0.1). Replace the "planned" commands in CLAUDE.md with verified ones.
-- [ ] 0.3 CI skeleton (GitHub Actions): clippy, eslint, typecheck, unit tests, web build on every push.
-- [ ] 0.4 Spike A, AMM: Meteora DAMM v2 and Raydium CPMM on localnet. Create the pool at the clearing price by CPI from a PDA, lock the LP permanently, claim fees by CPI. Log D-002 and the inputs to Q-01 and Q-02. *Needs network.*
-- [ ] 0.5 Spike B, Kalshi: read docs and API terms, list open markets, read a settled market, hash the response as evidence, save fixtures. Log D-003. *Needs network.*
-- [ ] 0.6 Research C, DFlow: can the program read tokenized Kalshi settlement on-chain? Research only, no code. Log D-004. *Needs network.*
-- [ ] 0.7 Spike D, media storage: IPFS (Pinata) vs Arweave. Log D-005. *Needs network; a Pinata key is optional.*
-- [ ] 0.8 Close-out: log D-006 to D-008, update PROGRESS.md and DECISIONS.md.
+- [x] 0.1 Toolchain bootstrap: `scripts/bootstrap.sh` (Agave 4.3.2, Anchor CLI 1.2.2, solana-verify 0.5.2), pins in D-001
+- [x] 0.2 Monorepo skeleton per SPEC §4 and a compile-only Anchor stub (`ping`), tested through LiteSVM
+- [x] 0.3 CI workflow (`.github/workflows/ci.yml`): JS job and program job. Passes locally; not yet observed on GitHub
+- [x] 0.4 Spike A, AMM: Meteora DAMM v2 on localnet — pool created, locked and fees claimed by CPI from PDAs; squatting shown; Raydium compared from docs and devnet reads only
+- [x] 0.5 Spike B, Kalshi: live listing, settled-market read, evidence hash, resolver mapping
+- [x] 0.6 Research C, DFlow: inconclusive, with a v1 sketch and the questions for DFlow
+- [x] 0.7 Spike D, media: Pinata chosen provisionally; upload untested
+- [x] 0.8 Close-out: decisions and spec questions logged, docs updated
+
+Carried forward: pin the first remote CI run; replace the throwaway AMM spike with the Phase 4 `seed_pool`/atomic launch; verify the Metaplex field limits and fee in Phase 3; read Kalshi's terms before committing any Kalshi data.
 
 ## Phase 1 — Program core
 
@@ -43,6 +57,8 @@ Done when: Happy and failure tests for every instruction; invariants 1, 2, 4, 5 
 - [ ] Invariant 4: a Commitment is claimed or refunded, never both, at most once (refund side only until `claim` exists in Phase 3)
 - [ ] Invariant 5: no proposal or commit after close; a voided event only refunds (the birth clauses are re-checked in Phase 3)
 - [ ] Invariant 8: at most one candidate per (event, outcome, canon hash)
+
+Invariants 1, 2 and 3 are worded in a way that donations and AMM rounding break; see Q-05 for the proposed replacements.
 
 ## Phase 2 — Resolution
 
@@ -64,7 +80,7 @@ Done when: Invariants 3 and 7 pass.
 Build: `seed_pool` by CPI, LP lock, harvest, creator fee claims.
 Done when: Works on localnet with the cloned AMM; fee split exact to the lamport.
 
-- [ ] `seed_pool` creates the pool by CPI on localnet with the cloned AMM, and the LP is locked permanently
+- [ ] `seed_pool` (or the atomic launch) creates the pool by CPI on localnet with the cloned AMM, and the LP is locked permanently
 - [ ] `harvest_fees` and `claim_creator_fees` work on localnet
 - [ ] The fee split (30% proposer, 20% co-proposers, 50% treasury) is exact to the lamport
 
@@ -116,15 +132,17 @@ Done when: Full lifecycle seen on devnet; RUNBOOK.md complete; mainnet checklist
 - [ ] `docs/RUNBOOK.md` complete (dispute, void, pause, key rotation)
 - [ ] Mainnet checklist drafted, not run
 
-## Proposed additions (not criteria until the user approves)
+## Proposed additions (not criteria until you approve)
 
 SPEC §11 doesn't assign these to a phase's "Done when". See `docs/DECISIONS.md` Q-05.
 
-- Invariant 6 (pause never blocks claim, refund or `claim_creator_fees`): test `refund` in Phase 1, `claim` in Phase 3, `claim_creator_fees` in Phase 4.
+- Invariant 6 (pause never blocks claim, refund or `claim_creator_fees`): test `refund` in Phase 1, `claim` in Phase 3, `claim_creator_fees` in Phase 4. Reworded per Q-05: no admin action can stop a committer reaching claim or refund.
 - Invariant 9 (only the resolver proposes outcomes, only the admin settles disputes, cranks are permissionless and idempotent): roles in Phase 2; idempotency of each crank in the phase that adds it, and again in Phase 6.
+- New invariants from the review: solvency, liveness (with admin and resolver silent every candidate reaches Born-with-pool or Refunding), fee conservation per asset, forward-only statuses, "Born implies a pool exists".
 - Ticker canon: Rust unit tests and the TypeScript/Rust shared-fixture hash test in Phase 1, since `propose_candidate` computes the canon hash on-chain.
 - Birth-math unit tests in Phase 3. Property tests start in Phase 1; Trident fuzzing in Phase 9.
 
 ## Session log
 
-- 2026-11-05 — Kickoff. Read SPEC.md in full; saved it unchanged as SPEC.md; created CLAUDE.md, PROGRESS.md and docs/DECISIONS.md; surveyed the sandbox (see Blockers); drafted the Phase 0 plan; stopped for the user's go-ahead.
+- 2026-11-05 — Kickoff. Read SPEC.md; saved it unchanged; created CLAUDE.md, PROGRESS.md and docs/DECISIONS.md; drafted the Phase 0 plan.
+- 2026-11-05 — Phase 0. You opened the network. Installed and pinned the toolchain; built the monorepo skeleton, Anchor stub and CI; ran the Kalshi, AMM and media spikes; two independent Opus reviews (spec and AMM) folded into DECISIONS.md. Key results: the Meteora create+lock+claim flow works by CPI from PDAs (122k CU), and pool squatting works without holding the coin, so the launch must be atomic.
