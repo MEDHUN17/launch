@@ -22,6 +22,7 @@ pub struct PauseChanged {
 pub struct EventCreated {
     pub event: Pubkey,
     pub id: u64,
+    pub external_id: String,
     pub external_id_hash: [u8; 32],
     pub outcome_count: u8,
     pub window_open: i64,
@@ -93,4 +94,6 @@ pub struct Refunded {
     pub wallet: Pubkey,
     pub amount: u64,
     pub refunded_total: u64,
+    /// The candidate's status after this refund (the first refund of a voided event flips Pending to Refunding).
+    pub candidate_status: crate::state::CandidateStatus,
 }

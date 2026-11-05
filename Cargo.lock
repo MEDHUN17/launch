@@ -2089,6 +2089,7 @@ name = "prequel"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "base64 0.22.1",
  "litesvm",
  "solana-account",
  "solana-instructions-sysvar 3.0.1",

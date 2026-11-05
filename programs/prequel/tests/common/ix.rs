@@ -114,7 +114,7 @@ impl Env {
 // ---- propose / commit / co_propose ---------------------------------------------------------------------------------
 
 use prequel::{
-    attestation::{content_hash, expected_message, Attested},
+    attestation::{content_hash, signed_digest, Attested},
     canon, ProposeArgs,
 };
 
@@ -200,7 +200,7 @@ pub fn co_propose(
 /// The bytes the canonicalizer signs for `args` (decision D-014), and the Ed25519 instruction carrying them.
 pub fn attestation_message(event_id: u64, args: &ProposeArgs, proposer: &Pubkey) -> Vec<u8> {
     let display = args.ticker.to_uppercase();
-    expected_message(&Attested {
+    signed_digest(&Attested {
         program_id: &program_id(),
         config: &config_pda(),
         event: &event_pda(event_id),
@@ -211,6 +211,7 @@ pub fn attestation_message(event_id: u64, args: &ProposeArgs, proposer: &Pubkey)
         proposer,
         expiry: args.attestation_expiry,
     })
+    .to_vec()
 }
 
 pub fn attestation_ix(

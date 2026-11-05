@@ -30,6 +30,8 @@ pub enum PrequelError {
     MinRaiseOutOfRange,
     #[msg("max_commit_per_wallet is below min_commit")]
     CommitCapTooLow,
+    #[msg("proposal_cutoff is outside its allowed range")]
+    ProposalCutoffOutOfRange,
     #[msg("max_candidates_per_outcome is outside its allowed range")]
     SlateSizeOutOfRange,
     // events
@@ -52,6 +54,8 @@ pub enum PrequelError {
     WindowNotOpen,
     #[msg("The commit window is closed")]
     WindowClosed,
+    #[msg("New proposals have stopped for this event; commits are still open")]
+    ProposalCutoffPassed,
     #[msg("The commit window has not closed yet")]
     WindowNotClosedYet,
     #[msg("The event is not in a state that allows this")]

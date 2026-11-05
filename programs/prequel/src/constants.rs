@@ -19,7 +19,8 @@ pub const MAX_OUTCOMES: u8 = 8;
 /// `proposed_outcome` / `resolved_outcome` before resolution.
 pub const NO_OUTCOME: u8 = u8::MAX;
 pub const MAX_NAME_LEN: usize = 32;
-pub const MAX_URI_LEN: usize = 200;
+/// Short enough that a signed proposal transaction stays well under the 1,232-byte packet limit; an IPFS URL is ~66.
+pub const MAX_URI_LEN: usize = 128;
 pub const MAX_EXTERNAL_ID_LEN: usize = 64;
 /// Event source codes. v0 lists Kalshi markets only.
 pub const SOURCE_KALSHI: u8 = 0;
@@ -38,6 +39,12 @@ pub const MIN_PROPOSAL_FEE: u64 = LAMPORTS_PER_SOL / 1_000;
 pub const MAX_PROPOSAL_FEE: u64 = LAMPORTS_PER_SOL;
 pub const MIN_COMMIT_FLOOR: u64 = LAMPORTS_PER_SOL / 1_000;
 pub const MAX_MIN_RAISE: u64 = 1_000 * LAMPORTS_PER_SOL;
+/// A winner must be able to pay its launch costs (28.1M lamports measured in the AMM spike) and still seed a pool.
+pub const MIN_MIN_RAISE: u64 = LAMPORTS_PER_SOL / 10;
+pub const MAX_PROPOSAL_CUTOFF: i64 = 7 * DAY;
+/// Commits must stop at least this long before the event starts.
+pub const MIN_CLOSE_TO_START_GAP: i64 = 5 * MINUTE;
+pub const MAX_WINDOW_LENGTH: i64 = 60 * DAY;
 pub const MIN_SLATE: u8 = 1;
 pub const MAX_SLATE: u8 = 32;
 /// `expected_resolution` may be at most this long after `event_start`.

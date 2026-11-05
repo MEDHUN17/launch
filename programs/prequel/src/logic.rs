@@ -36,8 +36,11 @@ pub fn validate_params(p: &Params) -> Res<()> {
     if p.min_commit < MIN_COMMIT_FLOOR {
         return Err(PrequelError::MinCommitTooLow);
     }
-    if p.min_raise < p.min_commit || p.min_raise > MAX_MIN_RAISE {
+    if p.min_raise < p.min_commit || !(MIN_MIN_RAISE..=MAX_MIN_RAISE).contains(&p.min_raise) {
         return Err(PrequelError::MinRaiseOutOfRange);
+    }
+    if !(0..=MAX_PROPOSAL_CUTOFF).contains(&p.proposal_cutoff) {
+        return Err(PrequelError::ProposalCutoffOutOfRange);
     }
     if p.max_commit_per_wallet != 0 && p.max_commit_per_wallet < p.min_commit {
         return Err(PrequelError::CommitCapTooLow);
@@ -56,8 +59,8 @@ pub fn validate_outcome_count(n: u8) -> Res<()> {
     }
 }
 
-/// `window_open <= window_close < event_start <= expected_resolution <= event_start + 90 days`, and the window
-/// must close in the future.
+/// `window_open <= window_close <= event_start - 5 minutes`, the window closes in the future and lasts at most
+/// 60 days, and `event_start <= expected_resolution <= event_start + 90 days`.
 pub fn validate_event_times(
     now: i64,
     window_open: i64,
@@ -68,9 +71,16 @@ pub fn validate_event_times(
     let latest_resolution = event_start
         .checked_add(MAX_RESOLUTION_AFTER_START)
         .ok_or(PrequelError::MathOverflow)?;
+    let latest_close = event_start
+        .checked_sub(MIN_CLOSE_TO_START_GAP)
+        .ok_or(PrequelError::MathOverflow)?;
+    let length = window_close
+        .checked_sub(window_open)
+        .ok_or(PrequelError::MathOverflow)?;
     if window_open <= window_close
         && window_close > now
-        && window_close < event_start
+        && window_close <= latest_close
+        && length <= MAX_WINDOW_LENGTH
         && expected_resolution >= event_start
         && expected_resolution <= latest_resolution
     {
@@ -111,6 +121,22 @@ pub fn check_accepts_commits(
     }
 }
 
+/// Proposals follow the commit window and, when `proposal_cutoff` is set, also stop that many seconds before close
+/// so the admin has time to reject a bad one. Commits are unaffected.
+pub fn check_accepts_proposals(
+    stored: EventStatus,
+    window_open: i64,
+    window_close: i64,
+    proposal_cutoff: i64,
+    now: i64,
+) -> Res<()> {
+    check_accepts_commits(stored, window_open, window_close, now)?;
+    if proposal_cutoff > 0 && now >= window_close.saturating_sub(proposal_cutoff) {
+        return Err(PrequelError::ProposalCutoffPassed);
+    }
+    Ok(())
+}
+
 /// Validates a deposit against `min_commit` and the per-wallet cap and returns the wallet's new running total.
 pub fn check_commit_amount(p: &Params, existing: u64, add: u64) -> Res<u64> {
     if add < p.min_commit {
@@ -143,7 +169,9 @@ pub fn validate_name(name: &str) -> Res<()> {
 }
 
 pub fn validate_uri(uri: &str) -> Res<()> {
-    if uri.is_empty() || uri.len() > MAX_URI_LEN || uri.chars().any(char::is_control) {
+    // Printable ASCII only (no spaces, no control characters): anything else must be percent-encoded.
+    if uri.is_empty() || uri.len() > MAX_URI_LEN || !uri.bytes().all(|b| (0x21..=0x7e).contains(&b))
+    {
         return Err(PrequelError::UriInvalid);
     }
     Ok(())
@@ -394,10 +422,125 @@ mod tests {
         );
         assert!(validate_name("a\nb").is_err() && validate_name("a\u{0}b").is_err());
         assert!(validate_uri("ipfs://bafy").is_ok() && validate_uri("").is_err());
-        assert!(validate_uri(&"u".repeat(200)).is_ok() && validate_uri(&"u".repeat(201)).is_err());
+        assert!(validate_uri(&"u".repeat(128)).is_ok() && validate_uri(&"u".repeat(129)).is_err());
         assert!(validate_external_id("KXNBA-1").is_ok() && validate_external_id("").is_err());
         assert!(validate_external_id(&"x".repeat(65)).is_err());
         assert!(validate_outcome_count(1).is_err() && validate_outcome_count(2).is_ok());
         assert!(validate_outcome_count(8).is_ok() && validate_outcome_count(9).is_err());
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    use EventStatus::*;
+
+    fn code(e: PrequelError) -> u32 {
+        e.into()
+    }
+
+    #[test]
+    fn min_raise_has_a_floor_and_the_cutoff_is_bounded() {
+        let mut p = Params::spec_defaults();
+        p.min_raise = MIN_MIN_RAISE - 1;
+        assert_eq!(
+            code(validate_params(&p).unwrap_err()),
+            code(PrequelError::MinRaiseOutOfRange)
+        );
+        p.min_raise = MIN_MIN_RAISE;
+        assert!(validate_params(&p).is_ok());
+        p.proposal_cutoff = -1;
+        assert_eq!(
+            code(validate_params(&p).unwrap_err()),
+            code(PrequelError::ProposalCutoffOutOfRange)
+        );
+        p.proposal_cutoff = MAX_PROPOSAL_CUTOFF + 1;
+        assert_eq!(
+            code(validate_params(&p).unwrap_err()),
+            code(PrequelError::ProposalCutoffOutOfRange)
+        );
+        p.proposal_cutoff = MAX_PROPOSAL_CUTOFF;
+        assert!(validate_params(&p).is_ok());
+    }
+
+    #[test]
+    fn close_to_start_gap_and_window_length() {
+        let now = 1_000;
+        let start = 100_000;
+        assert!(
+            validate_event_times(now, 0, start - MIN_CLOSE_TO_START_GAP, start, start).is_ok(),
+            "exactly the gap"
+        );
+        assert!(
+            validate_event_times(now, 0, start - MIN_CLOSE_TO_START_GAP + 1, start, start).is_err(),
+            "one second short"
+        );
+        let long_start = 10 * DAY * 100;
+        assert!(validate_event_times(
+            now,
+            2_000,
+            2_000 + MAX_WINDOW_LENGTH,
+            long_start,
+            long_start
+        )
+        .is_ok());
+        assert!(
+            validate_event_times(
+                now,
+                2_000,
+                2_001 + MAX_WINDOW_LENGTH,
+                long_start,
+                long_start
+            )
+            .is_err(),
+            "window over 60 days"
+        );
+        assert!(
+            validate_event_times(now, 0, 2_000, i64::MIN, i64::MAX).is_err(),
+            "extreme values are errors, not panics"
+        );
+    }
+
+    #[test]
+    fn proposals_stop_before_commits_when_a_cutoff_is_set() {
+        let (open, close) = (100, 1_000);
+        assert!(
+            check_accepts_proposals(Open, open, close, 0, 999).is_ok(),
+            "no cutoff: runs until close"
+        );
+        assert!(check_accepts_proposals(Open, open, close, 200, 799).is_ok());
+        assert_eq!(
+            code(check_accepts_proposals(Open, open, close, 200, 800).unwrap_err()),
+            code(PrequelError::ProposalCutoffPassed)
+        );
+        assert!(
+            check_accepts_commits(Open, open, close, 800).is_ok(),
+            "commits are still open"
+        );
+        assert_eq!(
+            code(check_accepts_proposals(Open, open, close, 200, 1_000).unwrap_err()),
+            code(PrequelError::WindowClosed)
+        );
+        assert_eq!(
+            code(check_accepts_proposals(Open, open, close, 200, 99).unwrap_err()),
+            code(PrequelError::WindowNotOpen)
+        );
+    }
+
+    #[test]
+    fn uris_are_printable_ascii_only() {
+        assert!(
+            validate_uri("ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
+                .is_ok()
+        );
+        for bad in [
+            "ipfs://a b",
+            "ipfs://caf\u{00e9}",
+            "a\u{0}b",
+            "a\nb",
+            "\u{7f}x",
+        ] {
+            assert!(validate_uri(bad).is_err(), "{bad:?}");
+        }
     }
 }

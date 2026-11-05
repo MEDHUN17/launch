@@ -64,6 +64,12 @@ pub fn handle_create_event(ctx: Context<CreateEvent>, args: CreateEventArgs) -> 
         args.event_start,
         args.expected_resolution,
     )?;
+    // A cutoff that swallows the whole window would make proposals impossible.
+    let cutoff = ctx.accounts.config.params.proposal_cutoff;
+    require!(
+        cutoff == 0 || cutoff < args.window_close - args.window_open,
+        PrequelError::InvalidEventTimes
+    );
 
     let config = &mut ctx.accounts.config;
     let id = config.next_event_id;
@@ -89,6 +95,8 @@ pub fn handle_create_event(ctx: Context<CreateEvent>, args: CreateEventArgs) -> 
     event.candidate_count = [0; 8];
     event.params = config.params; // frozen for the life of the event (Q-11)
     event.canon_version = crate::canon::CANON_VERSION;
+    event.layout_version = 1;
+    event.external_id = args.external_id.clone();
     event.created_at = now;
     event.bump = ctx.bumps.event;
 
@@ -100,6 +108,7 @@ pub fn handle_create_event(ctx: Context<CreateEvent>, args: CreateEventArgs) -> 
     emit!(EventCreated {
         event: event.key(),
         id,
+        external_id: args.external_id,
         external_id_hash: args.external_id_hash,
         outcome_count: args.outcome_count,
         window_open: args.window_open,

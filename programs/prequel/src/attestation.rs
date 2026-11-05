@@ -1,9 +1,11 @@
 //! Canonicalizer attestation (decision D-014, SPEC §2 "Attestation").
 //!
 //! When an event requires attestation, `propose_candidate` must be preceded, in the same transaction and
-//! immediately before it, by a native Ed25519 precompile instruction with exactly one signature over the message
-//! below, made by the configured canonicalizer key. The runtime verifies the signature; this module checks that
-//! the instruction says what we need: right key, right bytes, nothing pointing at other instructions.
+//! immediately before it, by a native Ed25519 precompile instruction with exactly one signature, made by the
+//! configured canonicalizer key, over the 32-byte sha256 of the message below. (Signing a digest keeps the
+//! precompile instruction small: the full 251-byte message would push a maximum-length proposal toward the
+//! 1,232-byte packet limit.) The runtime verifies the signature; this module checks that the instruction says
+//! what we need: right key, right bytes, nothing pointing at other instructions.
 
 use crate::error::PrequelError;
 use anchor_lang::prelude::*;
@@ -24,7 +26,7 @@ pub struct Attested<'a> {
     pub event: &'a Pubkey,
     pub outcome: u8,
     pub canon_hash: &'a [u8; 32],
-    /// sha256(name || 0x00 || display ticker || 0x00 || uri)
+    /// See [`content_hash`].
     pub content_hash: &'a [u8; 32],
     pub image_hash: &'a [u8; 32],
     pub proposer: &'a Pubkey,
@@ -33,12 +35,20 @@ pub struct Attested<'a> {
 
 pub const MESSAGE_LEN: usize = 18 + 32 * 3 + 1 + 32 * 4 + 8;
 
+/// sha256 of the three text fields, each preceded by its length, so that no contents can make two different
+/// triples encode to the same bytes. `display_ticker` is the stored (uppercased) ticker.
 pub fn content_hash(name: &str, display_ticker: &str, uri: &str) -> [u8; 32] {
+    let (n, t, u) = (
+        name.len() as u16,
+        display_ticker.len() as u16,
+        uri.len() as u16,
+    );
     solana_sha256_hasher::hashv(&[
+        &n.to_le_bytes(),
         name.as_bytes(),
-        &[0],
+        &t.to_le_bytes(),
         display_ticker.as_bytes(),
-        &[0],
+        &u.to_le_bytes(),
         uri.as_bytes(),
     ])
     .to_bytes()
@@ -58,6 +68,11 @@ pub fn expected_message(a: &Attested) -> Vec<u8> {
     m.extend_from_slice(&a.expiry.to_le_bytes());
     debug_assert_eq!(m.len(), MESSAGE_LEN);
     m
+}
+
+/// What the canonicalizer's key actually signs: sha256 of [`expected_message`].
+pub fn signed_digest(a: &Attested) -> [u8; 32] {
+    solana_sha256_hasher::hash(&expected_message(a)).to_bytes()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -120,7 +135,7 @@ pub fn verify(
         PrequelError::AttestationInvalid
     );
     require!(
-        parsed.message == expected_message(attested).as_slice(),
+        parsed.message == signed_digest(attested).as_slice(),
         PrequelError::AttestationInvalid
     );
     Ok(())
@@ -266,5 +281,35 @@ mod tests {
         let mut d = good.clone();
         d[12..14].copy_from_slice(&u16::MAX.to_le_bytes());
         assert!(parse_ed25519(&d).is_err());
+    }
+
+    #[test]
+    fn embedded_nul_cannot_move_a_field_boundary() {
+        assert_ne!(
+            content_hash("a\u{0}b", "T", "u"),
+            content_hash("a", "b\u{0}T", "u")
+        );
+    }
+
+    #[test]
+    fn the_signed_value_is_a_32_byte_digest_of_the_message() {
+        let (program, config, event, proposer, h) = sample();
+        let a = Attested {
+            program_id: &program,
+            config: &config,
+            event: &event,
+            outcome: 0,
+            canon_hash: &h,
+            content_hash: &h,
+            image_hash: &h,
+            proposer: &proposer,
+            expiry: 5,
+        };
+        let d = signed_digest(&a);
+        assert_eq!(
+            d,
+            solana_sha256_hasher::hash(&expected_message(&a)).to_bytes()
+        );
+        assert_ne!(d, signed_digest(&Attested { expiry: 6, ..a }));
     }
 }

@@ -105,13 +105,24 @@ pub struct ProposeCandidate<'info> {
 
 pub fn handle_propose_candidate(ctx: Context<ProposeCandidate>, args: ProposeArgs) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
+    // A proposal is both a proposal and a commit, so either pause stops it (like co_propose).
     require!(
         !ctx.accounts.config.pause_proposals,
         PrequelError::ProposalsPaused
     );
+    require!(
+        !ctx.accounts.config.pause_commits,
+        PrequelError::CommitsPaused
+    );
     let event_key = ctx.accounts.event.key();
     let event = &mut ctx.accounts.event;
-    logic::check_accepts_commits(event.status, event.window_open, event.window_close, now)?;
+    logic::check_accepts_proposals(
+        event.status,
+        event.window_open,
+        event.window_close,
+        event.params.proposal_cutoff,
+        now,
+    )?;
     require!(
         args.outcome < event.outcome_count,
         PrequelError::InvalidOutcome
@@ -182,6 +193,7 @@ pub fn handle_propose_candidate(ctx: Context<ProposeCandidate>, args: ProposeArg
     candidate.committer_count = 1;
     candidate.status = CandidateStatus::Pending;
     candidate.created_at = now;
+    candidate.layout_version = 1;
     candidate.bump = ctx.bumps.candidate;
     candidate.vault_bump = ctx.bumps.vault;
 
@@ -276,8 +288,8 @@ fn deposit(
         candidate.status == CandidateStatus::Pending,
         PrequelError::CandidateNotPending
     );
-    // `init_if_needed` leaves a brand-new account zeroed; a real commitment always has a first-commit time.
-    let fresh = commitment.first_commit_ts == 0;
+    // `init_if_needed` leaves a brand-new account zeroed; a real commitment always names its wallet.
+    let fresh = commitment.wallet == Pubkey::default();
     let wallet_total = logic::check_commit_amount(
         &event.params,
         if fresh { 0 } else { commitment.amount },

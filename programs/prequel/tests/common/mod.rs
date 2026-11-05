@@ -267,3 +267,57 @@ pub fn ed25519_ix_raw(
         data,
     }
 }
+
+// ---- packet size, compute budget, events -------------------------------------------------------------------------
+
+pub const COMPUTE_BUDGET_PROGRAM: Pubkey = pubkey!("ComputeBudget111111111111111111111111111111");
+
+/// The two instructions wallets and apps usually prepend: a compute-unit limit and a priority fee.
+pub fn compute_budget_ixs() -> Vec<Instruction> {
+    let limit = Instruction {
+        program_id: COMPUTE_BUDGET_PROGRAM,
+        accounts: vec![],
+        data: [&[2u8][..], &200_000u32.to_le_bytes()].concat(),
+    };
+    let price = Instruction {
+        program_id: COMPUTE_BUDGET_PROGRAM,
+        accounts: vec![],
+        data: [&[3u8][..], &1_000u64.to_le_bytes()].concat(),
+    };
+    vec![limit, price]
+}
+
+/// Serialized size of a legacy transaction: signature count byte, 64 bytes per signature, and the message.
+pub fn tx_size(env: &Env, ixs: &[Instruction], payer: &Pubkey, signatures: usize) -> usize {
+    let msg = Message::new_with_blockhash(ixs, Some(payer), &env.svm.latest_blockhash());
+    1 + 64 * signatures + VersionedMessage::Legacy(msg).serialize().len()
+}
+
+/// Decodes every `T` event the program logged in a transaction.
+pub fn events_of<T: anchor_lang::Event>(logs: &[String]) -> Vec<T> {
+    use base64::Engine;
+    logs.iter()
+        .filter_map(|l| l.strip_prefix("Program data: "))
+        .filter_map(|b64| {
+            base64::engine::general_purpose::STANDARD
+                .decode(b64.trim())
+                .ok()
+        })
+        .filter(|bytes| bytes.len() >= 8 && bytes[..8] == *T::DISCRIMINATOR)
+        .map(|bytes| T::deserialize(&mut &bytes[8..]).expect("event decodes"))
+        .collect()
+}
+
+/// Number of `Program data:` lines, that is, events of any type.
+pub fn event_count(logs: &[String]) -> usize {
+    logs.iter()
+        .filter(|l| l.starts_with("Program data: "))
+        .count()
+}
+
+/// Sends lamports to an address that a later `init` will create (an attacker pre-funding a PDA).
+pub fn prefund(env: &mut Env, from: &Keypair, to: &Pubkey, lamports: u64) {
+    let ix =
+        anchor_lang::solana_program::system_instruction::transfer(&from.pubkey(), to, lamports);
+    env.send(&[ix], &[from]).expect("pre-funding transfer");
+}
